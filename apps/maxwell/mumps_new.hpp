@@ -46,8 +46,11 @@
 #include <cmumps_c.h>
 #include <zmumps_c.h>
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Weverything"
 #include <Eigen/Dense>
 #include <Eigen/Sparse>
+#pragma clang diagnostic pop
 
 #define MUMPS_JOB_INIT              -1
 #define MUMPS_JOB_TERMINATE         -2

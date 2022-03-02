@@ -313,7 +313,7 @@ public:
 
 template<template<typename, size_t, typename> class Mesh, typename T, typename Storage>
 void
-vector_wave_solver(Mesh<T,3,Storage>& msh, size_t order)
+vector_wave_solver(Mesh<T,3,Storage>& msh, size_t order, T alpha)
 {
     typedef Mesh<T,3,Storage>                   mesh_type;
     typedef typename mesh_type::cell_type       cell_type;
@@ -324,7 +324,6 @@ vector_wave_solver(Mesh<T,3,Storage>& msh, size_t order)
                                   .cd = (size_t) order,
                                   .fd = (size_t) order } );
 
-    T alpha = 10.;
     T delta_t = 1e-12;
     T epsilon = 8.85e-12;
     T mu = 4e-7*M_PI;
@@ -359,7 +358,7 @@ vector_wave_solver(Mesh<T,3,Storage>& msh, size_t order)
         auto CR = disk::curl_reconstruction_pk(msh, cl, chdi);
         Matrix<T, Dynamic, Dynamic> ST = disk::curl_hdg_stabilization(msh, cl, chdi);
 
-        Matrix<T, Dynamic, Dynamic> mK = (1./mu)*(CR.second + alpha*ST);
+        Matrix<T, Dynamic, Dynamic> mK = (1./mu)*CR.second + alpha*ST;
 
         Matrix<T, Dynamic, Dynamic> mass = make_vector_mass_oper(msh, cl, chdi);
         Matrix<T, Dynamic, Dynamic> mM = epsilon*mass;
@@ -448,7 +447,7 @@ vector_wave_solver(Mesh<T,3,Storage>& msh, size_t order)
 
     disk::dynamic_vector<T> X_next_decond;
 
-    size_t num_ts = 5000;
+    size_t num_ts = 101;
     for (size_t i = 0; i < num_ts; i++)
     {
         auto start = std::chrono::steady_clock::now();
@@ -472,6 +471,7 @@ vector_wave_solver(Mesh<T,3,Storage>& msh, size_t order)
             std::vector<scalar_type> data_ey( msh.cells_size() );
             std::vector<scalar_type> data_ez( msh.cells_size() );
             size_t cell_i = 0;
+            scalar_type err = 0.0;
             for (auto& cl : msh)
             {
                 auto cb = make_vector_monomial_basis(msh, cl, chdi.cell_degree());
@@ -483,8 +483,22 @@ vector_wave_solver(Mesh<T,3,Storage>& msh, size_t order)
                 data_ex[cell_i] = ls(0);
                 data_ey[cell_i] = ls(1);
                 data_ez[cell_i] = ls(2);
+
+                auto qps = disk::integrate(msh, cl, 2*chdi.cell_degree()+1);
+                for (auto& qp : qps)
+                {
+                    auto qphi = cb.eval_functions(qp.point());
+                    auto nval = qphi.transpose()*esolseg;
+                    auto freq = 211.98528005809e6;
+                    Matrix<T, 3, 1> fval = sol_fun(qp.point()) * std::cos(2.0*M_PI*freq*dt*i);
+                    Matrix<T, 3, 1> diff = nval - fval;
+                    err += qp.weight() * diff.dot(diff);
+                }
+
                 cell_i++;
             }
+
+            std::cout << "L2 error: " << std::sqrt(err) << std::endl;
 
             disk::silo_database silo_db;
 
@@ -579,7 +593,7 @@ int main(int argc, char **argv)
         //    maxwell_eigenvalue_solver(msh, degree, stab_param);
         //else
             //vector_wave_solver(msh, degree, stab_param, omega, false);
-            vector_wave_solver(msh, degree);
+            vector_wave_solver(msh, degree, stab_param);
 
         return 0;
     }
@@ -596,7 +610,7 @@ int main(int argc, char **argv)
         loader.read_mesh(mesh_filename);
         loader.populate_mesh(msh);
 
-        vector_wave_solver(msh, degree);
+        vector_wave_solver(msh, degree, stab_param);
 
         return 0;
     }
@@ -609,7 +623,7 @@ int main(int argc, char **argv)
         
         disk::load_mesh_fvca6_3d<coord_T>(mesh_filename, msh);
         
-        vector_wave_solver(msh, degree);
+        vector_wave_solver(msh, degree, stab_param);
         
         return 0;
     }
