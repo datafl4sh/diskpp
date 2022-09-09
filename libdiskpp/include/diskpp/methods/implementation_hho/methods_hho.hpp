@@ -171,16 +171,16 @@ project_tangent(const Mesh<T,2,Storage>&                        msh,
     throw "not implemented";
 }
 
-template<template<typename, size_t, typename> class Mesh, typename T, typename Storage>
-dynamic_vector<typename Mesh<T,3,Storage>::coordinate_type>
-project_tangent(const Mesh<T,3,Storage>&                        msh,
-                const typename Mesh<T,3,Storage>::cell_type&    cl,
-                const hho_degree_info&                          hdi,
-                const vector_rhs_function<Mesh<T,3,Storage>>&   u,
-                size_t                                          di = 0)
+template<typename ScalT = double, template<typename, size_t, typename> class Mesh, typename CoordT, typename Storage, typename Function>
+dynamic_vector<ScalT>
+project_tangent(const Mesh<CoordT,3,Storage>&                        msh,
+                const typename Mesh<CoordT,3,Storage>::cell_type&    cl,
+                const hho_degree_info&                              hdi,
+                const Function&   u,
+                size_t                                              di = 0)
 {
-    using mesh_type         = Mesh<T,3,Storage>;
-    using scalar_type       = typename mesh_type::coordinate_type;
+    using mesh_type         = Mesh<ScalT,3,Storage>;
+    using scalar_type       = ScalT;
     using vector_type       = dynamic_vector<scalar_type>;
     using point_type        = typename mesh_type::point_type;
 
@@ -192,8 +192,22 @@ project_tangent(const Mesh<T,3,Storage>&                        msh,
 
     vector_type ret = vector_type::Zero(cbs + num_faces * fbs);
 
-    ret.block(0, 0, cbs, 1) = project_function(msh, cl, hdi.cell_degree(), u, di);
+    auto cb = disk::make_vector_monomial_basis(msh, cl, hdi.cell_degree());
+    const auto degree     = cb.degree();
 
+    Matrix<ScalT, Dynamic, Dynamic> mass = Matrix<ScalT, Dynamic, Dynamic>::Zero(cbs, cbs);
+    Matrix<ScalT, Dynamic, 1> rhs = Matrix<ScalT, Dynamic, 1>::Zero(cbs);
+
+    const auto qps = integrate(msh, cl, 2 * (degree + di));
+    for (auto& qp : qps)
+    {
+        const auto phi      = cb.eval_functions(qp.point());
+        mass += qp.weight() * phi * phi.transpose();
+        rhs += qp.weight() * phi * u(qp.point());   
+    }
+
+    ret.segment(0, cbs) = mass.ldlt().solve(rhs);
+    
     const auto fcs = faces(msh, cl);
     for (size_t i = 0; i < num_faces; i++)
     {
@@ -203,10 +217,20 @@ project_tangent(const Mesh<T,3,Storage>&                        msh,
             return n.cross(uval.cross(n));
         };
 
+        Matrix<ScalT, Dynamic, Dynamic> mass_f = Matrix<ScalT, Dynamic, Dynamic>::Zero(fbs, fbs);
+        Matrix<ScalT, Dynamic, 1> rhs_f = Matrix<ScalT, Dynamic, 1>::Zero(fbs);
         auto fc = fcs[i];
         const auto fb = make_vector_monomial_tangential_basis(msh, fc, hdi.face_degree());
-        ret.segment(cbs + i * fbs, fbs) = project_function(msh, fcs[i], fb, trace_u, di);
+        auto qps_f = integrate(msh, fc, 2*(degree+di));
+        for (auto& qp : qps_f)
+        {
+            const auto phi      = fb.eval_functions(qp.point());
+            mass_f += qp.weight() * phi * phi.transpose();
+            rhs_f += qp.weight() * phi * u(qp.point());
+        }
+        ret.segment(cbs + i * fbs, fbs) = mass_f.ldlt().solve(rhs_f);
     }
+    
 
     return ret;
 }

@@ -47,7 +47,7 @@ if ( NOT (${SITE_PRESET} STREQUAL "default") )
     include("${SITE_CONFIGS}/Site${SITE_PRESET}.cmake")
 endif()
 
-add_link_options("-Wl,--no-as-needed")
+#add_link_options("-Wl,--no-as-needed")
 
 ######################################################################
 ## Update submodules if necessary

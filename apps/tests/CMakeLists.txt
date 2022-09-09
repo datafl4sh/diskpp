@@ -75,6 +75,9 @@ target_link_libraries(test_curl_reconstruction ${LINK_LIBS})
 add_executable(test_curl_reconstruction_pk curl_reconstruction_pk.cpp)
 target_link_libraries(test_curl_reconstruction_pk ${LINK_LIBS})
 
+add_executable(test_wave_reconstruction_pk wave_reconstruction_pk.cpp)
+target_link_libraries(test_wave_reconstruction_pk ${LINK_LIBS})
+
 add_executable(test_curl_stabilization curl_stabilization.cpp)
 target_link_libraries(test_curl_stabilization ${LINK_LIBS})
 

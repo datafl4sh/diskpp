@@ -484,6 +484,78 @@ curl_reconstruction_pk(const Mesh&                       msh,
     return std::make_pair(oper, data);
 }
 
+template<typename ScalT=double, template<typename, size_t, typename> class Mesh, typename CoordT, typename Storage>
+std::pair<dynamic_matrix<ScalT>, dynamic_matrix<ScalT>>
+wave_reconstruction_pk(const Mesh<CoordT, 3, Storage>&  msh,
+                       const typename Mesh<CoordT, 3, Storage>::cell_type&  cl,
+                       const hho_degree_info&           cell_infos,
+                       ScalT                            kappa)
+{
+    using T =  ScalT;
+    using mesh_type = Mesh<CoordT, 3, Storage>;
+    typedef Matrix<T, Dynamic, Dynamic> matrix_type;
+    typedef Matrix<T, Dynamic, 1>       vector_type;
+
+    const auto facdeg = cell_infos.face_degree();
+    const auto celdeg = cell_infos.cell_degree();
+    const auto recdeg = cell_infos.reconstruction_degree();
+
+    const auto cb = make_vector_monomial_basis(msh, cl, celdeg);
+    const auto rb = make_vector_monomial_basis(msh, cl, recdeg);
+    const auto fbs = vector_basis_size(facdeg, mesh_type::dimension - 1, mesh_type::dimension-1);
+    const auto cbs = vector_basis_size(celdeg, mesh_type::dimension, mesh_type::dimension);
+    const auto rbs = vector_basis_size(recdeg, mesh_type::dimension, mesh_type::dimension);
+
+    const auto      fcs = faces(msh, cl);
+    const auto num_faces_dofs = fcs.size() * fbs;
+
+    matrix_type mass = matrix_type::Zero(rbs, rbs);
+    matrix_type cr_rhs = matrix_type::Zero(rbs, cbs + num_faces_dofs);
+
+    const auto qps = integrate(msh, cl, 2*celdeg+2);
+    for (auto& qp : qps)
+    {
+        const auto r_phi = rb.eval_functions(qp.point());
+        mass += qp.weight() * r_phi * r_phi.transpose();
+
+        const auto c_cphi = cb.eval_curls2(qp.point());
+        cr_rhs.block(0, 0, rbs, cbs) += qp.weight() * r_phi * c_cphi.transpose();
+    }
+
+    auto inv_ikappa = 1./(std::complex<double>(0,1) * kappa);
+
+    size_t offset = cbs;
+    for (size_t i = 0; i < fcs.size(); i++)
+    {
+        const auto fc     = fcs[i];
+        const auto n      = normal(msh, cl, fc);
+        const auto fb     = make_vector_monomial_tangential_basis(msh, fc, facdeg);
+
+        const auto qps_f = integrate(msh, fc, 2*recdeg+2);
+        for (auto& qp : qps_f)
+        {
+            Matrix<T, Dynamic, 3> r_phi     = rb.eval_functions(qp.point());
+            Matrix<T, Dynamic, 3> c_cphi    = cb.eval_curls2(qp.point());
+            Matrix<T, Dynamic, 3> f_phi     = fb.eval_functions(qp.point());
+            Matrix<T, Dynamic, 3> f_phi_n   = vcross(f_phi, n);
+
+            cr_rhs.block(0, offset, rbs, fbs) += qp.weight() * r_phi * f_phi_n.transpose();
+            cr_rhs.block(0, 0, rbs, cbs) -= inv_ikappa * qp.weight() * r_phi * c_cphi.transpose();
+        }
+
+        offset += fbs;
+    }
+
+    LDLT<matrix_type> ldlt_lhs(mass);
+    if (ldlt_lhs.info() != Eigen::Success)
+        throw std::invalid_argument("Can't factorize matrix for wave reconstruction");
+
+    matrix_type oper = ldlt_lhs.solve(cr_rhs);
+    matrix_type data = cr_rhs.transpose() * oper;
+
+    return std::make_pair(oper, data);
+}
+
 template<typename Mesh>
 std::pair<dynamic_matrix<typename Mesh::coordinate_type>, dynamic_matrix<typename Mesh::coordinate_type>>
 curl_reconstruction_nedelec(const Mesh&                       msh,
