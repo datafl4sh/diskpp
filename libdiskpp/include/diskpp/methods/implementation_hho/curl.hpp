@@ -535,12 +535,15 @@ wave_reconstruction_pk(const Mesh<CoordT, 3, Storage>&  msh,
         for (auto& qp : qps_f)
         {
             Matrix<T, Dynamic, 3> r_phi     = rb.eval_functions(qp.point());
+            Matrix<T, Dynamic, 3> r_phi_n   = vcross(r_phi, n);
             Matrix<T, Dynamic, 3> c_cphi    = cb.eval_curls2(qp.point());
+            Matrix<T, Dynamic, 3> n_c_cphi  = vcross(n, c_cphi);
             Matrix<T, Dynamic, 3> f_phi     = fb.eval_functions(qp.point());
-            Matrix<T, Dynamic, 3> f_phi_n   = vcross(f_phi, n);
-
-            cr_rhs.block(0, offset, rbs, fbs) += qp.weight() * r_phi * f_phi_n.transpose();
-            cr_rhs.block(0, 0, rbs, cbs) -= inv_ikappa * qp.weight() * r_phi * c_cphi.transpose();
+            Matrix<T, Dynamic, 3> c_phi     = cb.eval_functions(qp.point());
+            Matrix<T, Dynamic, 3> n_c_phi_n = vcross(n, vcross(c_phi, n));
+            cr_rhs.block(0, offset, rbs, fbs) += qp.weight() * r_phi_n * f_phi.transpose();
+            cr_rhs.block(0, 0, rbs, cbs) -= qp.weight() * r_phi_n * n_c_phi_n.transpose();
+            //cr_rhs.block(0, 0, rbs, cbs) += inv_ikappa * qp.weight() * r_phi_n * n_c_cphi.transpose();
         }
 
         offset += fbs;

@@ -64,6 +64,14 @@ struct test_functor_wave_reconstruction<ScalT, Mesh<T,3,Storage>>
             return ret;
         };
 
+        auto sol = [&](const point_type& pt) -> Matrix<scalar_type,3,1> {
+            Matrix<scalar_type,3,1> ret;
+            ret(0) = 0.0;
+            ret(1) = 0.0;
+            ret(2) = -i*kappa*std::exp(-i*kappa*pt.x());
+            return ret;
+        };
+
         size_t fd = degree;
         size_t cd = degree;
         size_t rd = degree;
@@ -82,12 +90,19 @@ struct test_functor_wave_reconstruction<ScalT, Mesh<T,3,Storage>>
             auto qps = integrate(msh, cl, 2*std::max(rd,cd)+1);
             for (const auto& qp : qps)
             {
-                auto cphi = rb.eval_functions(qp.point());
-                Matrix<scalar_type,3,1> diff = /*disk::eval(rf, cphi) -*/ f(qp.point());
+                auto rphi = rb.eval_functions(qp.point());
+                Matrix<scalar_type,3,1> rval = Matrix<scalar_type,3,1>::Zero();
+                for (size_t i = 0; i < rb.size(); i++)
+                    rval += rf(i)*rphi.block(i,0,1,3).transpose();
+                Matrix<scalar_type,3,1> diff = rval - sol(qp.point());
+                //std::cout << "rf  : " << rf.transpose() << std::endl;
+                //std::cout << "RVAL: " << rval.transpose() << std::endl;
+                //std::cout << "SOL : " << sol(qp.point()).transpose() << std::endl;
                 error += qp.weight() * diff.dot(diff);
             }
-
         }
+
+        std::cout << error << std::endl;
 
         return real(std::sqrt(error));
     }

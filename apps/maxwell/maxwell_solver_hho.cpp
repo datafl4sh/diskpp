@@ -679,7 +679,7 @@ compute_element_contribution(hho_maxwell_solver_state<Mesh>& state,
     auto mur = cfg.mu( di.tag() );
     auto sigma = cfg.sigma( di.tag() );
     auto Z = std::sqrt( (jw*mur*mu0) / (sigma + jw*epsr*eps0) );
-    auto CR = disk::curl_reconstruction_pk(msh, cl, hdi);
+    auto CR = disk::wave_reconstruction_pk(msh, cl, hdi, 1.0);
     auto ST = disk::curl_hdg_stabilization(msh, cl, hdi);
     auto MM = disk::make_vector_mass_oper(msh, cl, hdi);
 
