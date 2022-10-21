@@ -890,7 +890,7 @@ solve(hho_maxwell_solver_state<Mesh>& state, config_loader<clT>& cfg)
     
         state.sol_full.segment(cbs*cell_i, cbs) = esol.head(cbs);
 
-        auto CR = disk::curl_reconstruction_pk(msh, cl, hdi);
+        auto CR = disk::wave_reconstruction_pk(msh, cl, hdi, 1.0);
         state.reco.segment(cbs*cell_i, cbs) = CR.first*esol;
 
         auto fcs = faces(msh, cl);
