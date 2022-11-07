@@ -37,3 +37,9 @@ option(BUILD_APP_HELMHOLTZ "Build Helmholtz applications" ON)
 if (BUILD_APP_HELMHOLTZ)
     add_subdirectory(helmholtz)
 endif()
+
+option(BUILD_APP_MAGNETOSTATICS "Build magnetostatics applications" ON)
+if (BUILD_APP_MAGNETOSTATICS)
+    add_subdirectory(magnetostatics)
+endif()
+
