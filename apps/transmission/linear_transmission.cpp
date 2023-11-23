@@ -25,6 +25,7 @@
 #include "diskpp/loaders/loader.hpp"
 #include "diskpp/methods/hho"
 #include "diskpp/output/silo.hpp"
+#include "diskpp/common/timecounter.hpp"
 
 #include "sol/sol.hpp"
 #include "mumps.hpp"
@@ -848,6 +849,42 @@ void lt_solver(Mesh& msh, size_t degree, const std::string& pbdefs_fn)
     if ( pd.compensate_average2() )
         pd.avgcomp2( omega2_integral/volume2 );
 
+    double omega1_integral_aftercomp = 0.0;
+    double omega2_integral_aftercomp = 0.0;
+
+    for (auto& cl : msh) {
+        auto qps = integrate(msh, cl, 10);
+
+        auto di = msh.domain_info(cl);
+        if ( di.tag() == internal_tag ) {
+            for (auto& qp : qps) {
+                omega1_integral_aftercomp += qp.weight() * pd.u1(msh, qp.point());
+            }
+        }
+        else {
+            for (auto& qp : qps) {
+                omega2_integral_aftercomp += qp.weight() * pd.u2(msh, qp.point());
+            }
+        }
+    }
+
+    if ( pd.compensate_average1() ) {
+        std::cout << "mean of u₁ on Ω₁: " << std::setprecision(15);
+        std::cout << omega1_integral_aftercomp/volume1 << " (after compensation)";
+        std::cout << std::endl;
+    }
+
+    if ( pd.compensate_average2() ) {
+        std::cout << "mean of u₂ on Ω₂: " << std::setprecision(15);
+        std::cout << omega2_integral_aftercomp/volume2 << " (after compensation)";
+        std::cout << std::endl;
+    }
+
+    std::cout << "Assembling " << msh.cells_size() << " elements" << std::endl;
+
+    timecounter tc;
+    tc.tic();
+
     /* Assembly loop */
     for (auto& cl : msh)
     {
@@ -918,12 +955,16 @@ void lt_solver(Mesh& msh, size_t degree, const std::string& pbdefs_fn)
     std::cout << "Triplets: " << triplets.size() << std::endl;
     triplets.clear();
 
+    std::cout << "Assembly time: " << tc.toc() << " seconds" << std::endl;
+
     std::cout << LHS.nonZeros() << " " << LHS.rows() << " " << LHS.cols() << std::endl;
 
     /* Run solver */
     disk::dynamic_vector<T> sol = disk::dynamic_vector<T>::Zero(LHS.rows());
 
     std::string solver_name = pd.solver();
+
+    tc.tic();
 
     if (solver_name == "pardiso")
     {
@@ -954,6 +995,10 @@ void lt_solver(Mesh& msh, size_t degree, const std::string& pbdefs_fn)
         solver.factorize(LHS);
         sol = solver.solve(RHS); 
     }
+
+    std::cout << "Solver time: " << tc.toc() << " seconds" << std::endl;
+
+    tc.tic();
 
     /* Postprocess */
     T l2_error_sq = 0.0;
@@ -1083,6 +1128,8 @@ void lt_solver(Mesh& msh, size_t degree, const std::string& pbdefs_fn)
         l2_error_mm_sq += diffC.dot(massC*diffC);
         l2_reconstruction_error_mm_sq += diffR.dot(massR*diffR);
     }
+
+    std::cout << "Postpro time: " << tc.toc() << " seconds" << std::endl;
 
     std::cout << "h = " << disk::average_diameter(msh) << std::endl;
     std::cout << "L2 error: " << std::sqrt(l2_error_sq) << std::endl;

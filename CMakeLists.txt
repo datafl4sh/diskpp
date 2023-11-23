@@ -15,7 +15,7 @@ set(diskpp_VERSION_PATCH 0)
 
 ######################################################################
 ## Required C++ standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ######################################################################
@@ -199,7 +199,7 @@ if (OPT_VECTORIZER_REMARKS)
 endif()
 
 ######################################################################
-## Compiler reporting: disable deprecation wa
+## Compiler reporting: disable deprecation warnings
 option(OPT_DISABLE_DEPRECATION_WARNINGS "Disable deprecation warnings" OFF)
 if(OPT_DISABLE_DEPRECATION_WARNINGS)
     if (COMPILER_IS_GNU OR COMPILER_IS_CLANG)
@@ -243,11 +243,19 @@ set(npaster_gmshtools_sources "contrib/gmsh_tools/gmshData.cpp"
                               "contrib/gmsh_tools/gmshElement.cpp"
                               "contrib/gmsh_tools/gmshMesh.cpp")
 add_library(npaster_gmshtools STATIC ${npaster_gmshtools_sources})
+set_property(TARGET npaster_gmshtools PROPERTY POSITION_INDEPENDENT_CODE ON)
 set(LINK_LIBS ${LINK_LIBS} npaster_gmshtools)
 
 
 add_subdirectory(libdiskpp)
 add_subdirectory(apps)
+
+option(BUILD_DISKPP_UNIT_TESTS "Build DiSk++ unitary tests" ON)
+if (BUILD_DISKPP_UNIT_TESTS)
+    include(CTest)
+    add_subdirectory(unit_tests)
+endif()
+
 
 ##
 ## Packaging

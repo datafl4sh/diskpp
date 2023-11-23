@@ -124,29 +124,41 @@ int test_basis_functions(const Mesh& msh)
 
     auto basis = scaled_monomial_basis(msh, cl, degree);
 
-    L2_projector π(msh, cl, basis);
-    auto dofs_f = π(f);
+    //L2_projector π(msh, cl, basis);
+    //auto dofs_f = π(f);
+
+    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> proj_mass =
+        integrate(msh, cl, basis, basis);
+    
+    Eigen::Matrix<T, Eigen::Dynamic, 1> proj_rhs =
+        integrate(msh, cl, f, basis);
+
+    Eigen::Matrix<T, Eigen::Dynamic, 1> dofs_f = proj_mass.ldlt().solve(proj_rhs);
+
+    auto ideg = 2*basis.integration_degree()+1;
 
     /* Error on the projected function */
-    auto fun_error = integrate(msh, cl, 2*degree+1, [&](const point_type& pt) {
-        auto s = f(pt) - eval(pt, dofs_f, basis);
+    auto errf = [&](const point_type& pt) {
+        T s = f(pt) - eval(pt, dofs_f, basis);
         return s*s;
-    }); 
+    };
+    auto fun_error = integrate(msh, cl, ideg, errf); 
 
     /* Norm of the projected function */
-    auto fun_norm = integrate(msh, cl, 2*degree+1, [&](const point_type& pt) {
-        auto s = f(pt);
+    auto normf = [&](const point_type& pt) {
+        T s = f(pt);
         return s*s;
-    });
+    };
+    auto fun_norm = integrate(msh, cl, ideg, normf);
 
     /* Error on the gradient of the projected function */
-    auto grad_error = integrate(msh, cl, 2*degree+1, [&](const point_type& pt) {
-        auto s = grad_f(pt) - eval(pt, dofs_f, grad(basis));
+    auto grad_error = integrate(msh, cl, ideg, [&](const point_type& pt) {
+        Eigen::Matrix<T,2,1> s = grad_f(pt) - eval(pt, dofs_f, grad(basis));
         return s.dot(s);
     });
 
     /* Norm of the gradient of the projected function */
-    auto grad_norm = integrate(msh, cl, 2*degree+1, [&](const point_type& pt) {
+    auto grad_norm = integrate(msh, cl, ideg, [&](const point_type& pt) {
         auto s = grad_f(pt);
         return s.dot(s);
     });
@@ -166,6 +178,24 @@ int test_basis_functions(const Mesh& msh)
     std::cout << "  Function relative error = " << fe << "% " << passfail(fepass) << std::endl;
     std::cout << "  Gradient relative error = " << ge << "% " << passfail(gepass) << std::endl;
 
+    auto fcs = faces(msh, cl);
+    for (auto& fc : fcs)
+    {
+        auto face_basis = scaled_monomial_basis(msh, fc, degree);
+        L2_projector πF(msh, fc, face_basis);
+        auto dofs_f_F = πF(f);
+        T fun_error_f = 0.0;
+        T fun_norm_f = 0.0;
+        auto fqps = integrate(msh, fc, 2*degree+2);
+        for (auto& qp : fqps) {
+            T diff = f(qp.point()) - eval(qp.point(), dofs_f_F, face_basis);
+            fun_error_f += qp.weight() * (diff*diff);
+            fun_norm_f += qp.weight() * normf(qp.point());
+        }
+        std::cout << "    Face Relerr: " << 100*std::sqrt(fun_error_f/fun_norm_f) << std::endl;
+    }
+
+
     return not (fepass and gepass);
 }
 
@@ -173,18 +203,13 @@ int main(void)
 {
     using T = double;
 
-    point<T,2> a{0, 0};
-    point<T,2> b{M_PI, M_PI};
-    point<T,2> c{-M_PI, M_PI};
+    simplicial_mesh<T,2> msh_simp;
+    make_single_element_mesh(msh_simp, {0,0}, {0.01,0}, {0.0005, 0.01});
+    test_basis_functions(msh_simp);
 
-    simplicial_mesh<T,2> msh;
-    make_single_element_mesh(msh, a, b, c);
-    test_basis_functions(msh);
-
-    //point<T,2> base;
-    //cartesian_mesh<T,2> msh;
-    //make_single_element_mesh(msh, {0.5, 0.5}, 1.0, M_PI);
-    //test_basis_functions(msh);
+    cartesian_mesh<T,2> msh_cart;
+    make_single_element_mesh(msh_cart, {0.5, 0.5}, 1.0, M_PI);
+    test_basis_functions(msh_cart);
 
     return 0;
 }

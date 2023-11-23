@@ -1,11 +1,8 @@
 
 set(LINK_LIBS diskpp)
 
-add_executable(monomial_bases_1D monomial_bases_1D.cpp)
-target_link_libraries(monomial_bases_1D ${LINK_LIBS})
-
-add_executable(monomial_bases_2D monomial_bases_2D.cpp)
-target_link_libraries(monomial_bases_2D ${LINK_LIBS})
+add_executable(elemtriangulation elemtriangulation.cpp)
+target_link_libraries(elemtriangulation ${LINK_LIBS})
 
 add_executable(bases_new bases_new.cpp)
 target_link_libraries(bases_new ${LINK_LIBS})

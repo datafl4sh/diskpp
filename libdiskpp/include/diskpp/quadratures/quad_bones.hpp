@@ -1,4 +1,14 @@
 /*
+ * DISK++, a template library for DIscontinuous SKeletal methods.
+ *
+ * Matteo Cicuttin (C) 2023
+ * matteo.cicuttin@polito.it
+ *
+ * Politecnico di Torino - DISMA
+ * Dipartimento di Matematica
+ */
+ 
+/*
  *       /\         DISK++, a template library for DIscontinuous SKeletal
  *      /__\        methods.
  *     /_\/_\
@@ -34,7 +44,7 @@
 
 #include "triangle_dunavant_rule.hpp"
 
-#define USE_ARBQ
+//#define USE_ARBQ
 
 #ifdef USE_ARBQ
     #include "tetrahedron_arbq_rule.hpp"
@@ -110,6 +120,7 @@ golub_welsch(const size_t degree)
  * @return template<typename T> gauss_legendre quadrature of gauss legendre
  */
 template<typename T>
+[[deprecated("old")]]
 std::vector<std::pair<point<T, 1>, T>>
 gauss_legendre(size_t degree)
 {
@@ -198,6 +209,7 @@ gauss_legendre(size_t degree)
 /* The client code should call this when a quadrature on the reference edge
  * is required. In our case the reference edge is [-1,1]. */
 template<typename T>
+[[deprecated("old")]]
 std::vector<std::pair<point<T, 1>, T>>
 edge_quadrature(const size_t doe)
 {
@@ -206,6 +218,7 @@ edge_quadrature(const size_t doe)
 
 /* Tetrahedron quadrature. This is just a driver to call either ABRQ or GM
  * quadrature rules in the jburkardt's code. */
+inline
 std::vector<std::pair<point<double,3>, double>>
 tetrahedron_quadrature(size_t degree)
 {
@@ -284,7 +297,9 @@ tetrahedron_quadrature(size_t degree)
 
 /* Triangle quadrature. This is just a driver to call Dunavant
  * quadrature rule in the jburkardt's code. */
-std::vector<std::pair<point<double,2>, double>>
+
+[[deprecated("old")]]
+inline std::vector<std::pair<point<double,2>, double>>
 triangle_quadrature(size_t degree)
 {
     std::vector<std::pair<point<double,2>, double>> ret;
@@ -317,6 +332,7 @@ triangle_quadrature(size_t degree)
 
 /* Quadrature for cartesian quadrangles, it is just tensorized Gauss points. */
 template<typename T>
+[[deprecated("old")]]
 std::vector<std::pair<point<T, 2>, T>>
 quadrangle_quadrature(const size_t degree)
 {
@@ -347,105 +363,6 @@ quadrangle_quadrature(const size_t degree)
 
 /* Private stuff to support quadratures. User should not rely on this stuff. */
 namespace priv {
-
-/* See Ern & Guermond - Theory and practice of FEM, pag 360. */
-/*
-template<typename T>
-std::vector<quadrature_point<T,2>>
-triangle_quadrature_low_order(const point<T,2>& p0,
-                              const point<T,2>& p1,
-                              const point<T,2>& p2, size_t deg)
-{
-    std::vector<quadrature_point<T,2>>   ret;
-    auto v0 = p1 - p0;
-    auto v1 = p2 - p0;
-    auto area = std::abs( (v0.x() * v1.y() - v0.y() * v1.x())/2.0 );
-    point<T,2>      qp;
-    T               qw;
-    T               a1 = (6. - std::sqrt(15.)) / 21;
-    T               a2 = (6. + std::sqrt(15.)) / 21;
-    T               w1 = (155. - std::sqrt(15.)) / 1200;
-    T               w2 = (155. + std::sqrt(15.)) / 1200;
-    switch(deg)
-    {
-        case 0:
-        case 1:
-            qw = area;
-            qp = (p0 + p1 + p2)/3;      ret.push_back( make_qp(qp, qw) );
-            return ret;
-        case 2:
-            qw = area/3;
-            qp = p0/6 + p1/6 + 2*p2/3;  ret.push_back( make_qp(qp, qw) );
-            qp = p0/6 + 2*p1/3 + p2/6;  ret.push_back( make_qp(qp, qw) );
-            qp = 2*p0/3 + p1/6 + p2/6;  ret.push_back( make_qp(qp, qw) );
-            return ret;
-        case 3:
-            qw = 9*area/20;
-            qp = (p0 + p1 + p2)/3;      ret.push_back( make_qp(qp, qw) );
-            qw = 2*area/15;
-            qp = (p0 + p1)/2;           ret.push_back( make_qp(qp, qw) );
-            qp = (p0 + p2)/2;           ret.push_back( make_qp(qp, qw) );
-            qp = (p1 + p2)/2;           ret.push_back( make_qp(qp, qw) );
-            qw = area/20;
-            qp = p0;                    ret.push_back( make_qp(qp, qw) );
-            qp = p1;                    ret.push_back( make_qp(qp, qw) );
-            qp = p2;                    ret.push_back( make_qp(qp, qw) );
-            return ret;
-        case 4:
-        case 5:
-            qw = 9*area/40;
-            qp = (p0 + p1 + p2)/3;      ret.push_back( make_qp(qp, qw) );
-            qw = w1 * area;
-            qp = a1*p0 + a1*p1 + (1-2*a1)*p2;   ret.push_back( make_qp(qp, qw) );
-            qp = a1*p0 + (1-2*a1)*p1 + a1*p2;   ret.push_back( make_qp(qp, qw) );
-            qp = (1-2*a1)*p0 + a1*p1 + a1*p2;   ret.push_back( make_qp(qp, qw) );
-            qw = w2 * area;
-            qp = a2*p0 + a2*p1 + (1-2*a2)*p2;   ret.push_back( make_qp(qp, qw) );
-            qp = a2*p0 + (1-2*a2)*p1 + a2*p2;   ret.push_back( make_qp(qp, qw) );
-            qp = (1-2*a2)*p0 + a2*p1 + a2*p2;   ret.push_back( make_qp(qp, qw) );
-            return ret;
-
-        default:
-            throw std::invalid_argument("Triangle quadrature: requested order too high");
-    }
-    return ret;
-}
-*/
-/* Get quadrature points for a triangle specified as a list of points. The
- * list of points is contained in a STL random-access containter (PtA) */
-template<typename T, typename PtA>
-[[deprecated("please use disk::quadrature::dunavant()")]]
-std::vector<disk::quadrature_point<T, 2>>
-integrate_triangle(size_t degree, const PtA& pts)
-{
-    assert(pts.size() == 3);
-    static_assert(std::is_same<typename PtA::value_type, point<T, 2>>::value, "This function is for 2D points");
-
-    using quadpoint_type = disk::quadrature_point<T, 2>;
-
-    const auto qps = disk::triangle_quadrature(degree);
-
-    std::vector<quadpoint_type> ret;
-
-    ret.resize(qps.size());
-
-    // Compute the integration basis
-    const auto [p0, v0, v1] = integration_basis(pts[0], pts[1], pts[2]);
-
-    /* Compute the area of the triangle */
-    const auto tm = area_triangle_kahan(pts[0], pts[1], pts[2]);
-
-    auto tr = [ p0 = p0, v0 = v0, v1 = v1, tm ](const std::pair<point<T, 2>, T>& qd) -> auto
-    {
-        const auto point  = p0 + v0 * qd.first.x() + v1 * qd.first.y();
-        const auto weight = qd.second * tm;
-        return disk::make_qp(point, weight);
-    };
-
-    std::transform(qps.begin(), qps.end(), ret.begin(), tr);
-
-    return ret;
-}
 
 /**
  * @brief Integrate using tensorized Gauss points on any quadrangle (not only
@@ -505,43 +422,6 @@ integrate_quadrangle_tens(size_t degree, const std::vector<point<T, 2>>& pts)
 
         const T weight = qp.second * J(xi, eta);
         ret.push_back(disk::make_qp(point<T, 2>({px, py}), weight));
-    }
-
-    return ret;
-}
-
-/**
- * @brief Generate a quadratue if the physical space of the 2D-face
- *
- * @tparam Mesh type of the mesh
- * @tparam T scalar type
- * @tparam Storage storage type
- * @param msh mesh
- * @param fc face
- * @param degree order of the quadrature
- * @return std::vector<disk::quadrature_point<T, 2>> quadrature
- */
-template<template<typename, size_t, typename> class Mesh, typename T, typename Storage>
-std::vector<disk::quadrature_point<T, 2>>
-integrate_2D_face(const Mesh<T, 2, Storage>& msh, const typename Mesh<T, 2, Storage>::face& fc, size_t degree)
-{
-    const auto qps = disk::edge_quadrature<T>(degree);
-    const auto pts = points(msh, fc);
-
-    const auto scale = (pts[1] - pts[0]);
-    const auto meas  = scale.to_vector().norm();
-
-    std::vector<disk::quadrature_point<T, 2>> ret;
-    ret.reserve(qps.size());
-
-    for (auto itor = qps.begin(); itor != qps.end(); itor++)
-    {
-        const auto qp = *itor;
-        const auto t  = qp.first.x();
-        const auto p  = 0.5 * (1 - t) * pts[0] + 0.5 * (1 + t) * pts[1];
-        const auto w  = qp.second * meas * 0.5;
-
-        ret.push_back(disk::make_qp(p, w));
     }
 
     return ret;

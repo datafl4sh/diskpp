@@ -1,11 +1,58 @@
+/*
+ * DISK++, a template library for DIscontinuous SKeletal methods.
+ *
+ * Matteo Cicuttin (C) 2023
+ * matteo.cicuttin@polito.it
+ *
+ * Politecnico di Torino - DISMA
+ * Dipartimento di Matematica
+ */
+
 #pragma once
 
 namespace disk::basis {
 
-template<typename Trial, typename Test>
-struct can_take_scalar_product {
-    static const bool value = (Trial::tensor_order == Test::tensor_order);
+template<typename T>
+concept basis = requires(T t) {
+    T::immersion_dimension;
+    T::basis_dimension;
+    T::tensor_order;
+    t.size();
+    t.degree();
+    t.integration_degree();
 };
+
+template<typename T>
+concept scalar_basis = basis<T> && requires {
+    requires T::tensor_order == 1;
+};
+
+template<typename T>
+concept vector_basis = basis<T> && requires {
+    requires T::tensor_order == 1;
+};
+
+template<typename T>
+concept scalar_basis_2D = basis<T> && requires {
+    requires T::tensor_order == 0;
+    requires T::immersion_dimension == 2;
+    requires T::basis_dimension == 2;
+};
+
+template<typename T>
+concept vector_basis_2D = basis<T> && requires {
+    requires T::tensor_order == 1;
+    requires T::immersion_dimension == 2;
+    requires T::basis_dimension == 2;
+};
+
+template<typename Trial, typename Test>
+struct can_take_scalar_product
+{};
+
+template<basis Trial, basis Test>
+struct can_take_scalar_product<Trial, Test>
+    : std::bool_constant<Trial::tensor_order == Test::tensor_order> { };
 
 template<size_t order>
 struct basis_category_tag

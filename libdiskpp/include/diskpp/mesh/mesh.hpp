@@ -1,6 +1,15 @@
 /*
  * DISK++, a template library for DIscontinuous SKeletal methods.
  *
+ * Matteo Cicuttin (C) 2023
+ * matteo.cicuttin@polito.it
+ *
+ * Politecnico di Torino - DISMA
+ * Dipartimento di Matematica
+ */
+/*
+ * DISK++, a template library for DIscontinuous SKeletal methods.
+ *
  * Matteo Cicuttin (C) 2020, 2021
  * matteo.cicuttin@uliege.be
  *
@@ -624,6 +633,30 @@ public:
 };
 
 template<typename Mesh>
+concept mesh_1D = requires {
+    typename Mesh::cell_type;
+    typename Mesh::face_type;
+    Mesh::dimension;
+    requires Mesh::dimension == 1;
+};
+
+template<typename Mesh>
+concept mesh_2D = requires {
+    typename Mesh::cell_type;
+    typename Mesh::face_type;
+    Mesh::dimension;
+    requires Mesh::dimension == 2;
+};
+
+template<typename Mesh>
+concept mesh_3D = requires {
+    typename Mesh::cell_type;
+    typename Mesh::face_type;
+    Mesh::dimension;
+    requires Mesh::dimension == 3;
+};
+
+template<typename Mesh>
 void mark_internal_faces(Mesh& msh)
 {
     std::vector<size_t> neigh_count(msh.faces_size(), 0);
@@ -810,10 +843,10 @@ public:
 template<typename Mesh>
 class faces_iterproxy
 {
-    Mesh& m_msh;
+    const Mesh& m_msh;
 
 public:
-    faces_iterproxy(Mesh& msh)
+    faces_iterproxy(const Mesh& msh)
         : m_msh(msh)
     {}
 
@@ -821,6 +854,22 @@ public:
     auto begin() const  { return m_msh.faces_begin(); }
     auto end()          { return m_msh.faces_end(); }
     auto end() const    { return m_msh.faces_end(); }
+};
+
+
+template<typename Mesh>
+class boundary_faces_iterproxy
+{
+    Mesh& m_msh;
+
+public:
+    boundary_faces_iterproxy(Mesh& msh)
+        : m_msh(msh)
+    {}
+    auto begin()        { return m_msh.boundary_faces_begin(); }
+    auto begin() const  { return m_msh.boundary_faces_begin(); }
+    auto end()          { return m_msh.boundary_faces_end(); }
+    auto end() const    { return m_msh.boundary_faces_end(); }
 };
 
 } // namespace priv
@@ -844,21 +893,32 @@ auto cells(mesh<T, DIM, Storage>& msh)
  */
 
 template<typename T, size_t DIM, typename Storage>
-auto faces(mesh<T, DIM, Storage>& msh)
+auto faces(const mesh<T, DIM, Storage>& msh)
 {
     using Mesh = mesh<T, DIM, Storage>;
     return priv::faces_iterproxy<Mesh>(msh);
 }
 
-/*
-typename<T, size_t DIM, typename Storage>
+
+/**
+ * Get iterator proxy to iterate on boundry faces with
+ *
+ *      for (auto& fc : boundary_faces(msh)) {}
+*/
+
+template<typename T, size_t DIM, typename Storage>
 auto boundary_faces(mesh<T, DIM, Storage>& msh)
 {
+    using Mesh = mesh<T, DIM, Storage>;
+    return priv::boundary_faces_iterproxy<Mesh>(msh);
 }
 
-typename<T, size_t DIM, typename Storage>
+/*
+template <typename T, size_t DIM, typename Storage>
 auto boundary_faces(mesh<T, DIM, Storage>& msh, size_t boundary_id)
 {
+    using Mesh = mesh<T, DIM, Storage>;
+    return priv::boundary_faces_iterproxy<Mesh>(msh);
 }
 */
 

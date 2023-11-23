@@ -475,6 +475,99 @@ inertia_axes(const Mesh& msh, const Elem& elem)
     return es.eigenvectors();
 }
 
+template<typename Mesh, typename Elem>
+static_matrix<typename Mesh::coordinate_type, Mesh::dimension, Mesh::dimension>
+scaled_inertia_axes(const Mesh& msh, const Elem& elem)
+{
+    typedef static_matrix<typename Mesh::coordinate_type, Mesh::dimension, Mesh::dimension> matrix_type;
+
+    using T = typename Mesh::coordinate_type;
+    static const size_t DIM = Mesh::dimension;
+
+    const auto bar = barycenter(msh, elem);
+
+    matrix_type mass = matrix_type::Zero();
+    matrix_type Id = matrix_type::Identity();
+
+    const auto qps = integrate(msh, elem, 2);
+    for (auto& qp : qps)
+    {
+        const auto r = (bar - qp.point()).to_vector();
+        mass += qp.weight() * ( (r * r.transpose()) );
+    }
+
+    Eigen::SelfAdjointEigenSolver<matrix_type> es(mass);
+
+    Eigen::Matrix<T, DIM, DIM> eigvecs = es.eigenvectors();
+    Eigen::Matrix<T, DIM, 1> eigvals = es.eigenvalues();
+
+    /* Find the max eigenvalue */
+    T emax = eigvals(0);
+    for (size_t i = 1; i < eigvals.size(); i++)
+        emax = std::max(emax, eigvals(i));
+
+    /* Rescale */
+    const auto inv_diam = 2./diameter(msh,elem);
+    for (size_t i = 0; i < eigvals.size(); i++)
+        eigvecs.col(i) *= inv_diam*std::sqrt(emax/eigvals(i));
+
+    return eigvecs;
+}
+
+namespace priv {
+
+template<typename T, size_t DIM, size_t N>
+static_matrix<T, DIM, DIM>
+element_local_axes(const std::array<point<T,DIM>, N>& pts)
+{
+    static_assert(N >= 3);
+
+    T diam = 0.0;
+    for (size_t i = 0; i < N; i++)
+        for (size_t j = i+1; j < N; j++)
+            diam = std::max(diam, distance(pts[i], pts[j]) );
+
+    static_matrix<T, DIM, DIM> ret;
+    auto v0 = (pts[1] - pts[0]).to_vector();
+    auto v1 = (pts[2] - pts[0]).to_vector();
+    v1 = v1 - v1.dot(v0)*v0/(v0.dot(v0)); // Gram-Schmidt
+    auto scale = 2*v0.norm()/diam;
+    ret.col(0) = v0/scale;
+    ret.col(1) = v1/scale;
+    return ret;
+}
+
+template<typename T, size_t DIM>
+static_matrix<T, DIM, DIM>
+element_local_axes(const std::vector<point<T,DIM>>& pts)
+{
+    assert(pts.size() >= 3);
+
+    T diam = 0.0;
+    for (size_t i = 0; i < pts.size(); i++)
+        for (size_t j = i+1; j < pts.size(); j++)
+            diam = std::max(diam, distance(pts[i], pts[j]) );
+
+    static_matrix<T, DIM, DIM> ret;
+    auto v0 = (pts[1] - pts[0]).to_vector();
+    auto v1 = (pts[2] - pts[0]).to_vector();
+    v1 = v1 - v1.dot(v0)*v0/(v0.dot(v0)); // Gram-Schmidt
+    auto scale = 2*v0.norm()/diam;
+    ret.col(0) = v0/scale;
+    ret.col(1) = v1/scale;
+    return ret;
+}
+} //namespace priv
+
+template<template<typename, size_t, typename> class Mesh, typename T, typename Storage>
+static_matrix<T, 2, 2>
+element_local_axes(const Mesh<T,2,Storage>& msh, const typename Mesh<T,2,Storage>::cell& cl)
+{
+    using point_type = typename Mesh<T,2,Storage>::point_type;
+    auto pts = points(msh, cl);
+    return priv::element_local_axes(pts);
+}
+
 } // namespace disk
 
 #endif /* _GEOMETRY_ALL_HPP_ */
