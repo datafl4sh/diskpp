@@ -441,9 +441,7 @@ test_quads_fvca5(const run_params& rp, const ElasticityParameters material_data)
     for (int i = 0; i < runs; i++)
     {
         disk::generic_mesh<T, 2> msh;
-        //disk::load_mesh_fvca5_2d<T>(paths[i].c_str(), msh);
-        auto mesher = disk::make_fvca5_hex_mesher(msh);
-        mesher.make_level(i);
+        disk::load_mesh_fvca5_2d<T>(paths[i].c_str(), msh);
         error_sumup.push_back(run_linear_elasticity_solver(msh, rp, material_data));
     }
     printResults(error_sumup);
