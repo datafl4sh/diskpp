@@ -151,7 +151,7 @@ make_vector_hho_symmetric_laplacian(const Mesh&                     msh,
     for (auto& qp : qps_2)
     {
         const function_type dphi = lb.eval_gradients(qp.point());
-        Matrix<T, Dynamic, nb_lag> rphi = Matrix<T, Dynamic, nb_lag>::Zero(rbs, N);
+        Matrix<T, Dynamic, nb_lag> rphi = Matrix<T, Dynamic, nb_lag>::Zero(rbs, nb_lag);
 
         int j = 0;
         for (size_t i = 0; i < lb.size(); i++)
