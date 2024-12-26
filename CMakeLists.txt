@@ -243,6 +243,10 @@ set(LINK_LIBS ${LINK_LIBS} sol2::sol2)
 
 #install(DIRECTORY meshes DESTINATION share)
 
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/diskpp_config.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/diskpp_config.h @ONLY)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+
 ## Super-temporary hack
 include_directories(contrib)
 set(npaster_gmshtools_sources "contrib/gmsh_tools/gmshData.cpp"
