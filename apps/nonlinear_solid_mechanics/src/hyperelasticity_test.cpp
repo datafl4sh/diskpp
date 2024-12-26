@@ -590,6 +590,9 @@ int main( int argc, char **argv ) {
     rp.setStabilizationParameter( 2.0 * material_data.getMu() );
     rp.setVerbose( verbose );
     rp.setPrecomputation( true );
+#ifdef NSM_USE_MUMPS
+    rp.setLinearSolver( disk::solvers::LinearSolverType::MUMPS_LU );
+#endif
 
     argc -= optind;
     argv += optind;

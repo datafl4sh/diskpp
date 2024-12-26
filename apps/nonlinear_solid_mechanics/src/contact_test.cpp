@@ -850,6 +850,9 @@ int main( int argc, char **argv ) {
     rp.m_theta = 0;
     rp.m_iter_max = 20;
     rp.m_sublevel = 0;
+#ifdef NSM_USE_MUMPS
+    rp.setLinearSolver( disk::solvers::LinearSolverType::MUMPS_LU );
+#endif
 
     int ch;
     bool robust = false;

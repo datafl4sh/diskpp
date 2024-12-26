@@ -703,7 +703,9 @@ int main( int argc, char **argv ) {
     rp.setUnsteadyParameters( dyna_para );
     rp.setTimeStep( 1.0, 200 );
 
-    rp.setLinearSolver( disk::solvers::LinearSolverType::PARDISO_LU );
+#ifdef NSM_USE_MUMPS
+    rp.setLinearSolver( disk::solvers::LinearSolverType::MUMPS_LU );
+#endif
     rp.setNonLinearSolver( disk::mechanics::NonLinearSolverType::NEWTON );
     rp.setMaximumNumberNLIteration( 1000 );
 
