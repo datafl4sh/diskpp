@@ -1,3 +1,19 @@
+
+
+
+
+#
+# You should use the CMake configuration provided with Intel MKL.
+# The proper way to do it is to set the MKLROOT environment variable
+# to the appropriate path, for example:
+#
+#   MKLROOT=/opt/intel/oneapi/mkl/latest ccmake ..
+#
+
+
+
+
+
 #
 # This source file is part of EMT, the ElectroMagneticTool.
 #
