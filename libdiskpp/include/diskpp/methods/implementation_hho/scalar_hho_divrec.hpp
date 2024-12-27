@@ -102,7 +102,8 @@ make_hho_divergence_reconstruction_rhs(const Mesh&                     msh,
 
     if (recdeg > 0)
     {
-        const auto qps = integrate(msh, cl, celdeg + recdeg - 1);
+        /* Don't decrease the quadrature degree. */
+        const auto qps = integrate(msh, cl, celdeg + recdeg);
         for (auto& qp : qps)
         {
             const auto s_dphi = cbas_s.eval_gradients(qp.point());

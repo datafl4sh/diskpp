@@ -69,7 +69,7 @@ endif()
 ###########################################################
 ## mkl_intel_lp64 
 find_library(MKL_mkl_intel_lp64_LIBRARY
-    NAMES   mkl_intel_lp64
+    NAMES   mkl_intel_ilp64
     HINTS ENV MKL_ROOT ${MKL_ROOT} ${MKL_HINTS}
     PATH_SUFFIXES lib lib/intel64 lib/intel64_lin
                   mkl/lib mkl/lib/intel64 mkl/lib/intel64_lin)

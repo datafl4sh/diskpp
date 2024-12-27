@@ -247,7 +247,11 @@ class linear_elasticity_solver
         //disk::solvers::pardiso_params<scalar_type> pparams;
         //mkl_pardiso(pparams, m_assembler.LHS, m_assembler.RHS, m_system_solution);
         
-        m_system_solution = mumps_lu(m_assembler.LHS, m_assembler.RHS);
+        //m_system_solution = mumps_lu(m_assembler.LHS, m_assembler.RHS);
+
+        Eigen::SparseLU<Eigen::SparseMatrix<double>> solver;
+        solver.compute(m_assembler.LHS);
+        m_system_solution = solver.solve(m_assembler.RHS);
 
         tc.toc();
         si.time_solver = tc.elapsed();
