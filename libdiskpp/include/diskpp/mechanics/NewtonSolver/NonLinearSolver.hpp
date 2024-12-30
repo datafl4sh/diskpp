@@ -90,6 +90,8 @@ class NonLinearSolver {
 
     PostMesh< mesh_type > m_post_mesh;
 
+    std::shared_ptr< disk::solvers::LinearSolver< scalar_type > > m_lin_solv;
+
     std::vector< ppt_type > m_ppt;
 
     bool m_verbose, m_convergence;
@@ -227,7 +229,9 @@ class NonLinearSolver {
           m_rp( rp ),
           m_bnd( bnd ),
           m_stab_manager( msh, rp.m_beta ),
-          m_fields( getNumberOfStepToSave( rp ) ) {
+          m_fields( getNumberOfStepToSave( rp ) ),
+          m_lin_solv(
+              std::make_shared< solvers::LinearSolver< scalar_type > >( rp.getLinearSolver() ) ) {
         if ( m_verbose ) {
             std::cout << "------------------------------------------------------------------------"
                          "-------------"
@@ -518,9 +522,9 @@ class NonLinearSolver {
 
             NonLinearStep< mesh_type > nlStep( m_rp );
 
-            newton_info = nlStep.compute( m_msh, m_bnd, m_rp, m_degree_infos, lf, current_step,
-                                          m_gradient_precomputed, m_stab_precomputed, m_behavior,
-                                          m_stab_manager, m_fields );
+            newton_info = nlStep.compute( m_msh, m_bnd, m_rp, m_degree_infos, m_lin_solv, lf,
+                                          current_step, m_gradient_precomputed, m_stab_precomputed,
+                                          m_behavior, m_stab_manager, m_fields );
 
             // Test convergence
             m_convergence = nlStep.convergence();

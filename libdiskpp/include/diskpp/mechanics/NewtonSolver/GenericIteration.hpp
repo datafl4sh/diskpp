@@ -82,8 +82,8 @@ class GenericIteration {
     typedef mechanical_computation< mesh_type > elem_type;
     typedef dynamic_computation< mesh_type > dyna_type;
 
-    typedef std::function< disk::static_vector< scalar_type, mesh_type::dimension >(
-        const disk::point< scalar_type, mesh_type::dimension > &, const scalar_type & ) >
+    typedef std::function< static_vector< scalar_type, mesh_type::dimension >(
+        const point< scalar_type, mesh_type::dimension > &, const scalar_type & ) >
         func_type;
 
     vector_type m_system_displ;
@@ -94,6 +94,8 @@ class GenericIteration {
     std::vector< matrix_type > m_AL;
 
     TimeStep< scalar_type > m_time_step;
+
+    std::shared_ptr< solvers::LinearSolver< scalar_type > > m_lin_solv;
 
     dyna_type m_dyna;
 
@@ -106,8 +108,12 @@ class GenericIteration {
 
     GenericIteration( const mesh_type &msh, const bnd_type &bnd, const param_type &rp,
                       const MeshDegreeInfo< mesh_type > &degree_infos,
+                      const std::shared_ptr< solvers::LinearSolver< scalar_type > > lin_solv,
                       const TimeStep< scalar_type > &current_step )
-        : m_verbose( rp.m_verbose ), m_time_step( current_step ), m_dyna( rp ) {
+        : m_verbose( rp.m_verbose ),
+          m_time_step( current_step ),
+          m_dyna( rp ),
+          m_lin_solv( lin_solv ) {
         m_AL.clear();
         m_AL.resize( msh.cells_size() );
 
@@ -151,14 +157,14 @@ class GenericIteration {
         return AssemblyInfo();
     }
 
-    virtual SolveInfo solve( const solvers::LinearSolverType &type ) {
+    virtual SolveInfo solve() {
         timecounter tc;
 
         // std::cout << "LHS" << m_assembler.LHS << std::endl;
         // std::cout << "RHS" << m_assembler.RHS << std::endl;
 
         tc.tic();
-        m_system_displ = solvers::linear_solver( type, m_assembler.LHS, m_assembler.RHS );
+        m_system_displ = m_lin_solv->solve( m_assembler.LHS, m_assembler.RHS );
         tc.toc();
 
         return SolveInfo( m_assembler.LHS.rows(), m_assembler.LHS.nonZeros(), tc.elapsed() );

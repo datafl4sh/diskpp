@@ -358,8 +358,8 @@ class dynamic_computation {
 
             const vector_type uT = uTF.head( num_cell_dofs );
 
-            R_iner = vector_type::Zero( num_total_dofs );
-            K_iner = matrix_type::Zero( num_total_dofs, num_total_dofs );
+            R_iner = vector_type::Zero( num_cell_dofs );
+            K_iner = matrix_type::Zero( num_cell_dofs, num_cell_dofs );
 
             switch ( m_scheme ) {
             case DynamicType::NEWMARK:
@@ -378,9 +378,9 @@ class dynamic_computation {
 
                 const auto coeff = 1.0 / ( c0 * dt * dt );
 
-                K_iner.topLeftCorner( num_cell_dofs, num_cell_dofs ) = coeff * mass_mat;
+                K_iner = coeff * mass_mat;
 
-                R_iner.head( num_cell_dofs ) -= mass_mat * aT;
+                R_iner -= mass_mat * aT;
                 break;
             }
             case DynamicType::LEAP_FROG: {

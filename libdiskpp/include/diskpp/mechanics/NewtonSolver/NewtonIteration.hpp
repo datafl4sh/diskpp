@@ -64,8 +64,9 @@ class NewtonIteration : public GenericIteration< MeshType > {
   public:
     NewtonIteration( const mesh_type &msh, const bnd_type &bnd, const param_type &rp,
                      const MeshDegreeInfo< mesh_type > &degree_infos,
+                     const std::shared_ptr< solvers::LinearSolver< scalar_type > > lin_solv,
                      const TimeStep< scalar_type > &current_step )
-        : GenericIteration< MeshType >( msh, bnd, rp, degree_infos, current_step ) {}
+        : GenericIteration< MeshType >( msh, bnd, rp, degree_infos, lin_solv, current_step ) {}
 
     AssemblyInfo assemble( const mesh_type &msh, const bnd_type &bnd, const param_type &rp,
                            const MeshDegreeInfo< mesh_type > &degree_infos, const func_type &lf,
@@ -162,8 +163,8 @@ class NewtonIteration : public GenericIteration< MeshType > {
                 this->m_dyna.compute( msh, cl, degree_infos, huT, acce_cells.at( cell_i ),
                                       this->m_time_step );
                 if ( !this->m_dyna.isExplicit() ) {
-                    lhs += this->m_dyna.K_iner;
-                    rhs += this->m_dyna.R_iner;
+                    lhs.topLeftCorner( num_cell_dofs, num_cell_dofs ) += this->m_dyna.K_iner;
+                    rhs.head( num_cell_dofs ) += this->m_dyna.R_iner;
                 }
                 ai.m_time_dyna += this->m_dyna.time_dyna;
             }
@@ -239,21 +240,6 @@ class NewtonIteration : public GenericIteration< MeshType > {
         ai.m_time_assembly = ttot.elapsed();
         ai.m_linear_system_size = this->m_assembler.LHS.rows();
         return ai;
-    }
-
-    SolveInfo solve( const solvers::LinearSolverType &type ) override {
-        timecounter tc;
-
-        // std::cout << "LHS" << this->m_assembler.LHS << std::endl;
-        // std::cout << "RHS" << this->m_assembler.RHS << std::endl;
-
-        tc.tic();
-        this->m_system_displ =
-            solvers::linear_solver( type, this->m_assembler.LHS, this->m_assembler.RHS );
-        tc.toc();
-
-        return SolveInfo( this->m_assembler.LHS.rows(), this->m_assembler.LHS.nonZeros(),
-                          tc.elapsed() );
     }
 
     scalar_type postprocess( const mesh_type &msh, const bnd_type &bnd, const param_type &rp,

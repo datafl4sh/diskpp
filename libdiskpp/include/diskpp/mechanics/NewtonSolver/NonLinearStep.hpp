@@ -38,6 +38,7 @@
 #include "diskpp/mechanics/NewtonSolver/TimeManager.hpp"
 #include "diskpp/mechanics/behaviors/laws/behaviorlaws.hpp"
 #include "diskpp/methods/hho"
+#include "diskpp/solvers/solver.hpp"
 
 #include <iostream>
 #include <sstream>
@@ -99,14 +100,15 @@ class NonLinearStep {
      * @return NewtonSolverInfo Informations about the Newton's step during the computation
      */
     template < typename LoadIncrement >
-    NewtonSolverInfo compute( const mesh_type &msh, const bnd_type &bnd, const param_type &rp,
-                              const MeshDegreeInfo< mesh_type > &degree_infos,
-                              const LoadIncrement &lf, const TimeStep< scalar_type > &current_step,
-                              const std::vector< matrix_type > &gradient_precomputed,
-                              const std::vector< matrix_type > &stab_precomputed,
-                              behavior_type &behavior,
-                              StabCoeffManager< scalar_type > &stab_manager,
-                              MultiTimeField< scalar_type > &fields ) {
+    NewtonSolverInfo
+    compute( const mesh_type &msh, const bnd_type &bnd, const param_type &rp,
+             const MeshDegreeInfo< mesh_type > &degree_infos,
+             const std::shared_ptr< solvers::LinearSolver< scalar_type > > lin_solv,
+             const LoadIncrement &lf, const TimeStep< scalar_type > &current_step,
+             const std::vector< matrix_type > &gradient_precomputed,
+             const std::vector< matrix_type > &stab_precomputed, behavior_type &behavior,
+             StabCoeffManager< scalar_type > &stab_manager,
+             MultiTimeField< scalar_type > &fields ) {
         NewtonSolverInfo ni;
         timecounter tc;
         tc.tic();
@@ -119,14 +121,14 @@ class NonLinearStep {
         case NonLinearSolverType::NEWTON: {
             // Newton step
             nlIter = std::make_unique< NewtonIteration< mesh_type > >( msh, bnd, rp, degree_infos,
-                                                                       current_step );
+                                                                       lin_solv, current_step );
             break;
         }
         case NonLinearSolverType::QNEWTON_BDIAG_JACO:
         case NonLinearSolverType::QNEWTON_BDIAG_ELAS:
         case NonLinearSolverType::QNEWTON_BDIAG_STAB: {
             nlIter = std::make_unique< QuasiNewtonIteration< mesh_type > >(
-                msh, bnd, rp, degree_infos, current_step );
+                msh, bnd, rp, degree_infos, lin_solv, current_step );
             break;
         }
         default:
@@ -176,7 +178,7 @@ class NonLinearStep {
             }
 
             // solve the global system
-            SolveInfo solve_info = nlIter->solve( rp.getLinearSolver() );
+            SolveInfo solve_info = nlIter->solve();
             ni.updateSolveInfo( solve_info );
             // update unknowns
             ni.m_assembly_info.m_time_postpro +=

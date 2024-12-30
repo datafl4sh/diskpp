@@ -417,5 +417,197 @@ Eigen::Matrix<T, Eigen::Dynamic, 1> linear_solver(const LinearSolverType &type,
     return x;
 }
 
+template < typename T >
+class LinearSolver {
+    typedef typename Eigen::SparseMatrix< T > sparse_type;
+    typedef typename Eigen::Matrix< T, Eigen::Dynamic, Eigen::Dynamic > matrix_type;
+    typedef typename Eigen::Matrix< T, Eigen::Dynamic, 1 > vector_type;
+
+    // used to impose BC dirichlet
+    std::shared_ptr< std::map< int, matrix_type > > m_lhs_loc;
+    bool m_empty;
+    LinearSolverType m_type;
+
+    Eigen::PardisoLU< sparse_type > m_pardisoLU;
+    Eigen::PardisoLDLT< sparse_type > m_pardisoLDLT;
+    Eigen::SparseLU< sparse_type > m_sparseLU;
+    Eigen::BiCGSTAB< sparse_type > m_bicg;
+
+  public:
+    LinearSolver() : m_empty( true ) { m_type = LinearSolverType::SPARSE_LU; }
+
+    LinearSolver( const LinearSolverType &solv ) : m_empty( true ) {
+        m_type = solv;
+        switch ( solv ) {
+        case LinearSolverType::PARDISO_LU:
+        case LinearSolverType::PARDISO_LDLT: {
+#ifndef HAVE_INTEL_MKL
+            throw std::runtime_error( "Pardiso is not installed" );
+#endif /* HAVE_INTEL_MKL */
+            break;
+        }
+        case LinearSolverType::SPARSE_LU:
+        case LinearSolverType::BICGSTAB: {
+            break;
+        }
+        default:
+            throw std::runtime_error( "Unexpected LinearSolver." );
+            break;
+        }
+    }
+
+    void analyze( const sparse_type &A ) {
+
+        switch ( m_type ) {
+        case LinearSolverType::PARDISO_LU: {
+#ifdef HAVE_INTEL_MKL
+            this->m_pardisoLU.analyzePattern( A );
+#else
+            throw std::runtime_error( "Pardiso is not installed" );
+#endif /* HAVE_INTEL_MKL */
+            break;
+        }
+        case LinearSolverType::PARDISO_LDLT: {
+#ifdef HAVE_INTEL_MKL
+            this->m_pardisoLDLT.analyzePattern( A );
+#else
+            throw std::runtime_error( "Pardiso is not installed" );
+#endif /* HAVE_INTEL_MKL */
+            break;
+        }
+        case LinearSolverType::SPARSE_LU: {
+            this->m_sparseLU.analyzePattern( A );
+            break;
+        }
+        case LinearSolverType::BICGSTAB: {
+            this->m_bicg.analyzePattern( A );
+            break;
+        }
+        default:
+            throw std::runtime_error( "Unexpected LinearSolver." );
+            break;
+        }
+    }
+
+    bool factorize( const sparse_type &A, bool force_analysis = false ) {
+
+        if ( force_analysis || this->m_empty ) {
+            this->analyze( A );
+        }
+
+        this->m_empty = false;
+
+        bool succes = false;
+
+        switch ( m_type ) {
+        case LinearSolverType::PARDISO_LU: {
+#ifdef HAVE_INTEL_MKL
+            this->m_pardisoLU.factorize( A );
+            succes = this->m_pardisoLU.info() == Eigen::Success;
+#else
+            throw std::runtime_error( "Pardiso is not installed" );
+#endif /* HAVE_INTEL_MKL */
+            break;
+        }
+        case LinearSolverType::PARDISO_LDLT: {
+#ifdef HAVE_INTEL_MKL
+            this->m_pardisoLDLT.factorize( A );
+            succes = this->m_pardisoLU.info() == Eigen::Success;
+#else
+            throw std::runtime_error( "Pardiso is not installed" );
+#endif /* HAVE_INTEL_MKL */
+            break;
+        }
+        case LinearSolverType::SPARSE_LU: {
+            this->m_sparseLU.factorize( A );
+            succes = this->m_pardisoLU.info() == Eigen::Success;
+            break;
+        }
+        case LinearSolverType::BICGSTAB: {
+            this->m_bicg.factorize( A );
+            succes = this->m_pardisoLU.info() == Eigen::Success;
+            break;
+        }
+        default:
+            throw std::runtime_error( "Unexpected LinearSolver." );
+            break;
+        }
+
+        return succes;
+    }
+
+    vector_type solve( const vector_type &b ) const {
+
+        if ( this->m_empty ) {
+            throw std::runtime_error( "Matrix is empty." );
+        }
+
+        bool succes = false;
+        vector_type x;
+
+        switch ( m_type ) {
+        case LinearSolverType::PARDISO_LU: {
+#ifdef HAVE_INTEL_MKL
+            x = this->m_pardisoLU.solve( b );
+            succes = this->m_pardisoLU.info() == Eigen::Success;
+#else
+            throw std::runtime_error( "Pardiso is not installed" );
+#endif /* HAVE_INTEL_MKL */
+            break;
+        }
+        case LinearSolverType::PARDISO_LDLT: {
+#ifdef HAVE_INTEL_MKL
+            x = this->m_pardisoLDLT.solve( b );
+            succes = this->m_pardisoLU.info() == Eigen::Success;
+#else
+            throw std::runtime_error( "Pardiso is not installed" );
+#endif /* HAVE_INTEL_MKL */
+            break;
+        }
+        case LinearSolverType::SPARSE_LU: {
+            x = this->m_sparseLU.solve( b );
+            succes = this->m_pardisoLU.info() == Eigen::Success;
+            break;
+        }
+        case LinearSolverType::BICGSTAB: {
+            x = this->m_bicg.solve( b );
+            succes = this->m_pardisoLU.info() == Eigen::Success;
+            break;
+        }
+        default:
+            throw std::runtime_error( "Unexpected LinearSolver." );
+            break;
+        }
+
+        if ( !succes ) {
+            throw std::runtime_error( "Fail to solve the linear system." );
+        }
+
+        return x;
+    }
+
+    vector_type solve( const sparse_type &A, const vector_type &b ) {
+        const bool success = this->factorize( A );
+
+        if ( !success ) {
+            throw std::runtime_error( "Fail to factorize the linear system." );
+        }
+
+        return this->solve( b );
+    }
+
+    bool empty() const { return this->m_empty; }
+
+    auto getLocalLhs() const { return this->m_lhs_loc; }
+
+    void setLocalLhs( const std::map< int, matrix_type > &lhs_loc ) {
+        m_lhs_loc = std::make_shared< std::map< int, matrix_type > >( lhs_loc );
+    }
+
+    void setLocalLhs( const std::shared_ptr< std::map< int, matrix_type > > lhs_loc ) {
+        m_lhs_loc = lhs_loc;
+    }
+};
+
 } // namespace solvers
 } // namespace disk

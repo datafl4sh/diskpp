@@ -261,7 +261,7 @@ void addAdditionalParameters( const STUDY &study, disk::mechanics::NonLinearPara
         // rp.setUnsteadyScheme( disk::mechanics::DynamicType::STATIC );
         rp.setUnsteadyParameters( dyna_para );
         rp.setLinearSolver( disk::solvers::LinearSolverType::PARDISO_LDLT );
-        rp.setNonLinearSolver( disk::mechanics::NonLinearSolverType::NEWTON );
+        rp.setNonLinearSolver( disk::mechanics::NonLinearSolverType::QNEWTON_BDIAG_JACO );
 
         break;
     }
@@ -531,7 +531,7 @@ void addNonLinearOptions( const Mesh< T, 2, Storage > &msh,
     }
     case STUDY::SQUARE_DYNA: {
         nl.addBehavior( disk::mechanics::DeformationMeasure::SMALL_DEF,
-                        disk::mechanics::LawType::ELASTIC );
+                        disk::mechanics::LawType::LINEAR_HARDENING );
 
         nl.addPointPlot( { 0.999, 0.999 }, "pointA.csv" );
         break;

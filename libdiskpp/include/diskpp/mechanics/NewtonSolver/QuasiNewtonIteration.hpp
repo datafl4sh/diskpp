@@ -61,12 +61,6 @@ class QuasiNewtonIteration : public GenericIteration< MeshType > {
     typedef typename GenericIteration< MeshType >::assembler_type assembler_type;
     typedef typename GenericIteration< MeshType >::func_type func_type;
 
-    typedef Eigen::PardisoLDLT< Eigen::SparseMatrix< scalar_type > > solver_type;
-
-    std::vector< matrix_type > m_lhs;
-
-    solver_type m_solver;
-
     ConvergenceAcceleration< scalar_type > m_accel;
 
     matrix_type _mass_term( const mesh_type &msh, const cell_type &cl,
@@ -126,8 +120,9 @@ class QuasiNewtonIteration : public GenericIteration< MeshType > {
   public:
     QuasiNewtonIteration( const mesh_type &msh, const bnd_type &bnd, const param_type &rp,
                           const MeshDegreeInfo< mesh_type > &degree_infos,
+                          const std::shared_ptr< solvers::LinearSolver< scalar_type > > lin_solv,
                           const TimeStep< scalar_type > &current_step )
-        : GenericIteration< MeshType >( msh, bnd, rp, degree_infos, current_step ) {
+        : GenericIteration< MeshType >( msh, bnd, rp, degree_infos, lin_solv, current_step ) {
         if ( rp.getUnsteadyScheme() != DynamicType::LEAP_FROG ) {
             std::invalid_argument( "Sheme not supported by QuasiNewton" );
         }
@@ -144,109 +139,112 @@ class QuasiNewtonIteration : public GenericIteration< MeshType > {
             msh, bnd, rp, degree_infos, gradient_precomputed, stab_precomputed, behavior,
             stab_manager, fields );
 
-        elem_type elem;
-        vector_mechanics_hho_assembler assembler( msh, degree_infos, bnd );
-
-        timecounter tc;
-        tc.tic();
-
-        const bool mixed_order = rp.m_cell_degree > rp.m_face_degree;
-        const bool small_def = ( behavior.getDeformation() == SMALL_DEF );
         const bool use_tangent = rp.getNonLinearSolver() == NonLinearSolverType::QNEWTON_BDIAG_JACO;
 
-        m_lhs.clear();
-        m_lhs.resize( msh.cells_size() );
-        auto depl = fields.getCurrentField( FieldName::DEPL );
+        if ( this->m_lin_solv->empty() || use_tangent ) {
+            elem_type elem;
+            vector_mechanics_hho_assembler assembler( msh, degree_infos, bnd );
 
-        for ( auto &cl : msh ) {
-            const auto cell_i = msh.lookup( cl );
+            timecounter tc;
+            tc.tic();
 
-            const auto cell_infos = degree_infos.cellDegreeInfo( msh, cl );
-            const auto num_cell_dofs = vector_cell_dofs( msh, cell_infos );
+            const bool mixed_order = rp.m_cell_degree > rp.m_face_degree;
+            const bool small_def = ( behavior.getDeformation() == SMALL_DEF );
 
-            const auto faces_infos = cell_infos.facesDegreeInfo();
-            const auto num_faces_dofs = vector_faces_dofs( msh, faces_infos );
+            auto lhs_loc = std::make_shared< std::map< int, matrix_type > >();
+            auto depl = fields.getCurrentField( FieldName::DEPL );
 
-            const auto beta_s = stab_manager.getValue( msh, cl );
+            for ( auto &cl : msh ) {
+                const auto cell_i = msh.lookup( cl );
 
-            matrix_type lhs;
+                const auto cell_infos = degree_infos.cellDegreeInfo( msh, cl );
+                const auto num_cell_dofs = vector_cell_dofs( msh, cell_infos );
 
-            switch ( rp.getNonLinearSolver() ) {
-            case NonLinearSolverType::QNEWTON_BDIAG_JACO:
-            case NonLinearSolverType::QNEWTON_BDIAG_ELAS: {
-                const auto huT = depl.at( cell_i );
+                const auto faces_infos = cell_infos.facesDegreeInfo();
+                const auto num_faces_dofs = vector_faces_dofs( msh, faces_infos );
 
-                matrix_type GT =
-                    _gradrec( msh, cl, rp, degree_infos, small_def, gradient_precomputed );
+                const auto beta_s = stab_manager.getValue( msh, cl );
 
-                elem.compute_rigidity_matrix( msh, cl, bnd, rp, degree_infos, GT, huT,
-                                              this->m_time_step, behavior, small_def, use_tangent );
+                matrix_type lhs;
 
-                const matrix_type stab =
-                    beta_s * _stab( msh, cl, rp, degree_infos, stab_precomputed );
+                switch ( rp.getNonLinearSolver() ) {
+                case NonLinearSolverType::QNEWTON_BDIAG_JACO:
+                case NonLinearSolverType::QNEWTON_BDIAG_ELAS: {
+                    const auto huT = depl.at( cell_i );
 
-                lhs = matrix_type::Zero( num_faces_dofs, num_faces_dofs );
+                    matrix_type GT =
+                        _gradrec( msh, cl, rp, degree_infos, small_def, gradient_precomputed );
 
-                int offset = 0;
-                const auto fcs = faces( msh, cl );
-                for ( size_t i = 0; i < fcs.size(); i++ ) {
-                    const auto fdi = faces_infos[i];
+                    elem.compute_rigidity_matrix( msh, cl, bnd, rp, degree_infos, GT, huT,
+                                                  this->m_time_step, behavior, small_def,
+                                                  use_tangent );
 
-                    if ( fdi.hasUnknowns() ) {
-                        const auto facdeg = fdi.degree();
-                        const auto fbs = vector_basis_size( facdeg, mesh_type::dimension - 1,
-                                                            mesh_type::dimension );
-
-                        lhs.block( offset, offset, fbs, fbs ) = elem.K_int.block(
-                            num_cell_dofs + offset, num_cell_dofs + offset, fbs, fbs );
-                        lhs.block( offset, offset, fbs, fbs ) +=
-                            stab.block( num_cell_dofs + offset, num_cell_dofs + offset, fbs, fbs );
-
-                        offset += fbs;
-                    }
-                }
-                assert( offset == num_faces_dofs );
-                break;
-            }
-            case NonLinearSolverType::QNEWTON_BDIAG_STAB: {
-                if ( mixed_order ) {
-                    matrix_type stab =
+                    const matrix_type stab =
                         beta_s * _stab( msh, cl, rp, degree_infos, stab_precomputed );
 
-                    lhs = stab.bottomRightCorner( num_faces_dofs, num_faces_dofs );
-                } else {
-                    lhs = beta_s * _mass_term( msh, cl, degree_infos );
+                    lhs = matrix_type::Zero( num_faces_dofs, num_faces_dofs );
+
+                    int offset = 0;
+                    const auto fcs = faces( msh, cl );
+                    for ( size_t i = 0; i < fcs.size(); i++ ) {
+                        const auto fdi = faces_infos[i];
+
+                        if ( fdi.hasUnknowns() ) {
+                            const auto facdeg = fdi.degree();
+                            const auto fbs = vector_basis_size( facdeg, mesh_type::dimension - 1,
+                                                                mesh_type::dimension );
+
+                            lhs.block( offset, offset, fbs, fbs ) = elem.K_int.block(
+                                num_cell_dofs + offset, num_cell_dofs + offset, fbs, fbs );
+                            lhs.block( offset, offset, fbs, fbs ) += stab.block(
+                                num_cell_dofs + offset, num_cell_dofs + offset, fbs, fbs );
+
+                            offset += fbs;
+                        }
+                    }
+                    assert( offset == num_faces_dofs );
+                    break;
                 }
-                break;
+                case NonLinearSolverType::QNEWTON_BDIAG_STAB: {
+                    if ( mixed_order ) {
+                        matrix_type stab =
+                            beta_s * _stab( msh, cl, rp, degree_infos, stab_precomputed );
+
+                        lhs = stab.bottomRightCorner( num_faces_dofs, num_faces_dofs );
+                    } else {
+                        lhs = beta_s * _mass_term( msh, cl, degree_infos );
+                    }
+                    break;
+                }
+                default: {
+                    throw std::invalid_argument( "QuasiNewton option is unknown." );
+                    break;
+                }
+                }
+
+                const vector_type rhs = vector_type::Zero( num_faces_dofs );
+
+                assembler.assemble( msh, cl, bnd, lhs, rhs );
+
+                if ( bnd.cell_has_dirichlet_faces( cl ) ) {
+                    ( *lhs_loc )[cell_i] = lhs;
+                }
             }
-            default: {
-                throw std::invalid_argument( "QuasiNewton option is unknown." );
-                break;
+            tc.toc();
+            ii.m_time_rigi += elem.time_rigi;
+            ii.m_time_dyna += tc.elapsed() - elem.time_rigi;
+
+            assembler.finalize();
+
+            tc.tic();
+            auto success = this->m_lin_solv->factorize( assembler.LHS );
+            this->m_lin_solv->setLocalLhs( lhs_loc );
+            tc.toc();
+            ii.m_time_solve += tc.elapsed();
+
+            if ( !success ) {
+                throw std::runtime_error( "Fail to factorize the linear solver." );
             }
-            }
-
-            const vector_type rhs = vector_type::Zero( num_faces_dofs );
-
-            assembler.assemble( msh, cl, bnd, lhs, rhs );
-
-            if ( bnd.cell_has_dirichlet_faces( cl ) ) {
-                m_lhs.at( cell_i ) = lhs;
-            }
-        }
-        tc.toc();
-        ii.m_time_rigi += elem.time_rigi;
-        ii.m_time_dyna += tc.elapsed() - elem.time_rigi;
-
-        assembler.finalize();
-
-        tc.tic();
-        m_solver.analyzePattern( assembler.LHS );
-        m_solver.factorize( assembler.LHS );
-        tc.toc();
-        ii.m_time_solve += tc.elapsed();
-
-        if ( m_solver.info() != Eigen::Success ) {
-            throw std::runtime_error( "Fail to solve the linear solver." );
         }
 
         return ii;
@@ -272,6 +270,8 @@ class QuasiNewtonIteration : public GenericIteration< MeshType > {
         auto current_time = this->m_time_step.end_time();
         auto depl = fields.getCurrentField( FieldName::DEPL );
         auto depl_faces = fields.getCurrentField( FieldName::DEPL_FACES );
+
+        const auto lhs_loc = this->m_lin_solv->getLocalLhs();
 
         std::vector< vector_type > resi_cells;
         resi_cells.reserve( msh.cells_size() );
@@ -332,7 +332,7 @@ class QuasiNewtonIteration : public GenericIteration< MeshType > {
             ai.m_time_stab += tc.elapsed();
 
             tc.tic();
-            this->m_assembler.assemble_nonlinear_rhs( msh, cl, bnd, m_lhs.at( cell_i ), rhs,
+            this->m_assembler.assemble_nonlinear_rhs( msh, cl, bnd, ( *lhs_loc )[cell_i], rhs,
                                                       depl_faces );
             tc.toc();
             ai.m_time_assembler += tc.elapsed();
@@ -357,20 +357,16 @@ class QuasiNewtonIteration : public GenericIteration< MeshType > {
         return ai;
     }
 
-    SolveInfo solve( const solvers::LinearSolverType &type ) override {
+    SolveInfo solve() override {
         timecounter tc;
 
-        if ( type != solvers::LinearSolverType::PARDISO_LDLT ) {
-            throw std::runtime_error( "Invalid solver" );
-        }
-
-        // std::cout << "RHS" << m_assembler.RHS.transpose() << std::endl;
+        // std::cout << "RHS" << this->m_assembler.RHS.transpose() << std::endl;
 
         tc.tic();
-        this->m_system_displ = m_solver.solve( this->m_assembler.RHS );
+        this->m_system_displ = this->m_lin_solv->solve( this->m_assembler.RHS );
         tc.toc();
 
-        // std::cout << "SOL" << m_system_displ.transpose() << std::endl;
+        // std::cout << "SOL" << this->m_system_displ.transpose() << std::endl;
 
         return SolveInfo( this->m_assembler.LHS.rows(), this->m_assembler.LHS.nonZeros(),
                           tc.elapsed() );
