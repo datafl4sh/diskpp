@@ -113,7 +113,7 @@ int main( int argc, char **argv ) {
     if ( std::regex_match( mesh_filename, std::regex( ".*\\.poly2d$" ) ) ) {
         std::cout << "Guessed mesh format: Poly2D format" << std::endl;
         disk::generic_mesh< RealType, 2 > msh;
-        disk::load_mesh_poly< RealType >( mesh_filename, msh );
+        disk::load_mesh_poly< RealType >( mesh_filename, msh, rp.getVerbose() );
         run_nl_solid_mechanics_solver( msh, rp, study );
         return 0;
     }
@@ -122,7 +122,7 @@ int main( int argc, char **argv ) {
     if ( std::regex_match( mesh_filename, std::regex( ".*\\.poly3d$" ) ) ) {
         std::cout << "Guessed mesh format: Poly3D format" << std::endl;
         disk::generic_mesh< RealType, 3 > msh;
-        disk::load_mesh_poly< RealType >( mesh_filename, msh );
+        disk::load_mesh_poly< RealType >( mesh_filename, msh, rp.getVerbose() );
         run_nl_solid_mechanics_solver( msh, rp, study );
         return 0;
     }
