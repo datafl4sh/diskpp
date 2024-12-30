@@ -92,6 +92,58 @@ integrate_nonconvex(const disk::generic_mesh<T, 2>&                     msh,
     return ret;
 }
 
+template < typename T >
+bool is_ortho_quad( const disk::generic_mesh< T, 2 > &msh,
+                    const typename disk::generic_mesh< T, 2 >::cell_type &cl ) {
+    const auto pts = points( msh, cl );
+
+    if ( pts.size() != 4 ) {
+        return false;
+    };
+
+    const T thrs = 1e-8;
+
+    const auto v01 = ( pts[1] - pts[0] ).to_vector().normalized();
+    const auto v03 = ( pts[3] - pts[0] ).to_vector().normalized();
+
+    if ( std::abs( v01.dot( v03 ) ) < thrs ) {
+        const auto v21 = ( pts[1] - pts[2] ).to_vector().normalized();
+        const auto v23 = ( pts[3] - pts[2] ).to_vector().normalized();
+
+        if ( std::abs( v21.dot( v23 ) ) < thrs ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+template < typename T >
+bool is_ortho_hexa( const disk::generic_mesh< T, 3 > &msh,
+                    const typename disk::generic_mesh< T, 3 >::cell_type &cl ) {
+
+    const auto fcs = faces( msh, cl );
+
+    if ( fcs.size() != 6 ) {
+        return false;
+    }
+
+    const auto bT = barycenter( msh, cl );
+
+    for ( auto &fc : fcs ) {
+        const auto n = normal( msh, cl, fc );
+        const auto bF = barycenter( msh, fc );
+
+        const auto vFT = ( bF - bT ).to_vector().normalized();
+
+        if ( n.dot( vFT ) < ( 1. - 1e-8 ) ) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 } // namespace priv
 
 } // namespace quadrature
@@ -109,15 +161,11 @@ integrate(const disk::generic_mesh<T, 2>& msh, const typename disk::generic_mesh
         return disk::quadrature::triangle_gauss(degree, pts[0], pts[1], pts[2]);
     }
 
-    bool convex = is_convex(msh, cl);
-
-    if (pts.size() == 4 and convex)
-    {
+    if ( pts.size() == 4 and quadrature::priv::is_ortho_quad( msh, cl ) ) {
         return disk::quadrature::tensorized_gauss_legendre(degree, pts[0], pts[1], pts[2], pts[3]);
     }
 
-    if (convex)
-    {
+    if ( is_convex( msh, cl ) ) {
         return quadrature::priv::integrate_convex(msh, cl, degree);
     }
 
@@ -195,17 +243,22 @@ integrate(const disk::generic_mesh<T, 3>& msh, const typename disk::generic_mesh
     }
 
     const auto pts = points(msh, cl);
-    switch (pts.size())
-    {
-        case 0:
-        case 1:
-        case 2:
-        case 3:
-            throw std::invalid_argument("A 3D cell cannot have less than four points. "
-                                        "This looks like a nice bug.");
 
-        default: return priv::integrate_polyhedron(msh, cl, degree);
+    if ( pts.size() < 4 ) {
+        throw std::invalid_argument( "A 3D cell cannot have less than four points. "
+                                     "This looks like a nice bug." );
     }
+
+    // if ( pts.size() == 8 ) {
+    //     if ( quadrature::priv::is_ortho_hexa( msh, cl ) ) {
+    //         // Its assume that vertices are correctly sorted (as an hexa in finite element)
+    //         std::array< point< T, 3 >, 8 > ptsv { pts[0], pts[1], pts[2], pts[3],
+    //                                               pts[4], pts[5], pts[6], pts[7] };
+    //         return disk::quadrature::tensorized_gauss_legendre( degree, ptsv );
+    //     }
+    // }
+
+    return priv::integrate_polyhedron( msh, cl, degree );
 }
 
 template<typename T>
