@@ -69,7 +69,7 @@ make_vector_hho_gradrec_impl(const Mesh&                     msh,
     // (vT, div(tau))_T
     if (graddeg > 0)
     {
-        const auto qps = integrate(msh, cl, celdeg + graddeg);
+        const auto qps = integrate(msh, cl, celdeg + graddeg - 1);
         for (auto& qp : qps)
         {
             const auto        c_phi     = cb.eval_functions(qp.point());

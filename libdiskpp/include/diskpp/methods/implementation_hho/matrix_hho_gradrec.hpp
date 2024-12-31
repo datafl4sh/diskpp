@@ -96,8 +96,7 @@ make_matrix_hho_symmetric_gradrec(const Mesh&                     msh,
     // compute rhs
     if (celdeg > 0)
     {
-        /* Don't decrease the quadrature degree. */
-        const auto qpc = integrate(msh, cl, graddeg + celdeg);
+        const auto qpc = integrate(msh, cl, graddeg + celdeg - 1);
         for (auto& qp : qpc)
         {
             const auto gphi    = gb.eval_functions(qp.point());
