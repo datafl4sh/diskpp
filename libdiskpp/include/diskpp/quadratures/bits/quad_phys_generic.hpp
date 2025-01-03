@@ -93,8 +93,8 @@ integrate_nonconvex(const disk::generic_mesh<T, 2>&                     msh,
 }
 
 template < typename T >
-bool is_ortho_quad( const disk::generic_mesh< T, 2 > &msh,
-                    const typename disk::generic_mesh< T, 2 >::cell_type &cl ) {
+bool is_tens_quad( const disk::generic_mesh< T, 2 > &msh,
+                   const typename disk::generic_mesh< T, 2 >::cell_type &cl ) {
     const auto pts = points( msh, cl );
 
     if ( pts.size() != 4 ) {
@@ -103,19 +103,13 @@ bool is_ortho_quad( const disk::generic_mesh< T, 2 > &msh,
 
     const T thrs = 1e-8;
 
-    const auto v01 = ( pts[1] - pts[0] ).to_vector().normalized();
-    const auto v03 = ( pts[3] - pts[0] ).to_vector().normalized();
+    const auto v02 = ( pts[2] - pts[0] ).to_vector();
 
-    if ( std::abs( v01.dot( v03 ) ) < thrs ) {
-        const auto v21 = ( pts[1] - pts[2] ).to_vector().normalized();
-        const auto v23 = ( pts[3] - pts[2] ).to_vector().normalized();
+    const auto p2_test = pts[1] + ( pts[3] - pts[0] );
 
-        if ( std::abs( v21.dot( v23 ) ) < thrs ) {
-            return true;
-        }
-    }
+    const auto dist = ( pts[2] - p2_test ).to_vector().norm();
 
-    return false;
+    return dist < thrs * v02.norm();
 }
 
 template < typename T >
@@ -161,7 +155,7 @@ integrate(const disk::generic_mesh<T, 2>& msh, const typename disk::generic_mesh
         return disk::quadrature::triangle_gauss(degree, pts[0], pts[1], pts[2]);
     }
 
-    if ( pts.size() == 4 and quadrature::priv::is_ortho_quad( msh, cl ) ) {
+    if ( pts.size() == 4 and quadrature::priv::is_tens_quad( msh, cl ) ) {
         return disk::quadrature::tensorized_gauss_legendre(degree, pts[0], pts[1], pts[2], pts[3]);
     }
 
