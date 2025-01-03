@@ -88,6 +88,12 @@ class Mfront_law {
         }
     }
 
+    void restore() {
+        for ( auto &qp_cell : m_list_cell_qp ) {
+            qp_cell.restore( m_data );
+        }
+    }
+
     law_cell_type &getCellQPs( const int cell_id ) { return m_list_cell_qp.at( cell_id ); }
 
     const law_cell_type &getCellQPs( const int cell_id ) const {

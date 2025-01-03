@@ -556,6 +556,7 @@ class NonLinearSolver {
                     }
 
                     list_time_step.splitCurrentTimeStep();
+                    m_behavior.restore();
                     m_fields.restore();
                 }
             } else {

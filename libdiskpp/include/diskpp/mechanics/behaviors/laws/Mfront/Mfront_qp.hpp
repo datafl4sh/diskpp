@@ -96,6 +96,11 @@ class Mfront_qp : public law_qp_bones< T, DIM > {
         mgis::behaviour::update( m_behavData );
     }
 
+    void restore() {
+        law_qp_bones< T, DIM >::restore();
+        mgis::behaviour::revert( m_behavData );
+    }
+
     scalar_type getEquivalentPlasticStrain() const {
         try {
             const auto ePSPtr = mgis::behaviour::getInternalStateVariable(

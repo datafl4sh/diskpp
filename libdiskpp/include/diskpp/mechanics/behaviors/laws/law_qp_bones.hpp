@@ -115,6 +115,8 @@ class law_qp_bones {
     scalar_type getEquivalentPlasticStrain() const { return scalar_type( 0 ); }
 
     void update() { m_estrain_prev = m_estrain_curr; }
+
+    void restore() { m_estrain_curr = m_estrain_prev; }
 };
 } // namespace mechanics
 } // namespace disk

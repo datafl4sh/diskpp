@@ -233,8 +233,11 @@ class GenericIteration {
         // const scalar_type error = std::max( relative_displ, relative_error );
         const scalar_type error = relative_error;
 
-        if ( !std::isfinite( error ) )
+        if ( !std::isfinite( error ) || std::isnan( error ) || !std::isfinite( max_error ) ||
+             std::isnan( max_error ) || !std::isfinite( residual ) || std::isnan( residual ) ||
+             !std::isfinite( -residual ) || std::isnan( -residual ) || residual > 1e100 ) {
             throw std::runtime_error( "Norm of residual is not finite" );
+        }
 
         if ( error <= rp.getConvergenceCriteria() ) {
             return true;

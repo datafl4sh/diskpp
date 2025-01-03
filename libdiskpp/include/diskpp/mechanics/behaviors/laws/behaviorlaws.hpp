@@ -695,6 +695,46 @@ class Behavior {
         }
     }
 
+    void restore( void ) {
+        switch ( m_id ) {
+        case 100:
+            return m_elastic.restore();
+            break;
+        case 101:
+            return m_linearHard.restore();
+            break;
+        case 102:
+            return m_nonlinearHard.restore();
+            break;
+        case 103:
+            return m_henckymises.restore();
+            break;
+        case 200:
+            return m_neohokean.restore();
+            break;
+        case 201:
+            return m_cavitation.restore();
+            break;
+        case 300:
+            return m_log_elastic.restore();
+            break;
+        case 301:
+            return m_log_linearHard.restore();
+            break;
+        case 302:
+            return m_log_nonlinearHard.restore();
+            break;
+#ifdef HAVE_MGIS
+        case 500:
+            return m_mfront.restore();
+            break;
+#endif
+
+        default:
+            throw std::invalid_argument( "Behavior error: Unknown id law" );
+        }
+    }
+
     vector_type projectStressOnCell( const MeshType &msh, const cell_type &cl,
                                      const hho_degree_info &hdi ) const {
         switch ( m_id ) {

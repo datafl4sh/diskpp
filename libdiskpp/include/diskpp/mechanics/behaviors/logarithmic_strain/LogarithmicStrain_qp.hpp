@@ -170,6 +170,7 @@ class LogarithmicStrain_qp {
     }
 
     void update() { m_law_hpp_qp.update(); }
+    void restore() { m_law_hpp_qp.restore(); }
 
     static_matrix_type compute_stress( const data_type &data ) const {
         return convertMatrix< scalar_type, DIM >( this->compute_stress3D( data ) );

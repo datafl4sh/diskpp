@@ -78,6 +78,12 @@ class LawTypeCellBones {
         }
     }
 
+    void restore() {
+        for ( auto &qp : m_list_qp ) {
+            qp.restore();
+        }
+    }
+
     std::vector< law_qp_type > &getQPs() { return m_list_qp; }
 
     const std::vector< law_qp_type > &getQPs() const { return m_list_qp; }

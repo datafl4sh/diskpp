@@ -98,6 +98,12 @@ class IsotropicHardeningVMis_qp : public law_qp_bones< T, DIM > {
         m_p_prev = m_p_curr;
     }
 
+    void restore() {
+        law_qp_bones< T, DIM >::restore();
+        m_pstrain_curr = m_pstrain_prev;
+        m_p_curr = m_p_prev;
+    }
+
     static_matrix_type3D compute_stress3D( const data_type &data ) const {
         const static_matrix_type3D Id = static_matrix_type3D::Identity();
 
