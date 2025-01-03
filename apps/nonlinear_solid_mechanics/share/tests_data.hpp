@@ -55,6 +55,9 @@ template < typename T >
 auto getMaterialData( const STUDY &study ) {
     disk::mechanics::MaterialData< T > material_data;
 
+    const T GPa = 1e9;
+    const T MPa = 1e6;
+
     switch ( study ) {
     case STUDY::COOK_ELAS: {
         // Cook Parameters HPP (mm, MPa, kN)
@@ -173,7 +176,7 @@ auto getMaterialData( const STUDY &study ) {
         break;
     }
     case STUDY::SQUARE_DYNA: {
-        // Cook Parameters  (m, Pa, N, kg, s)
+        // Parameters  (m, Pa, N, kg, s)
         // https://www.dynasupport.com/howtos/general/consistent-units
 
         material_data.setMu( 1 );
@@ -181,9 +184,9 @@ auto getMaterialData( const STUDY &study ) {
         material_data.setRho( 1 );
 
         material_data.setK( 0.0 );
-        material_data.setH( 0.25 );
+        material_data.setH( 0. );
 
-        material_data.setSigma_y0( 0.25 );
+        material_data.setSigma_y0( 0.25e60 );
 
         material_data.addMfrontParameter( "YoungModulus", material_data.getE() );
         material_data.addMfrontParameter( "PoissonRatio", material_data.getNu() );
@@ -206,30 +209,25 @@ auto getMaterialData( const STUDY &study ) {
         break;
     }
     case STUDY::TAYLOR_ROD: {
-        //  (mm, MPa, kN, kg)
+        //  (m, Pa, N, kg, s)
+        // https://www.dynasupport.com/howtos/general/consistent-units
 
-        const T E = 120000;
+        const T E = 120 * GPa;
         const T nu = 0.35;
 
         material_data.setMu( E, nu );
         material_data.setLambda( E, nu );
-        material_data.setRho( 8930 * 10.e-6 );
+        material_data.setRho( 8930. );
 
         material_data.setK( 0.0 );
-        material_data.setH( 0.1 );
+        material_data.setH( 0.1 * GPa );
 
-        material_data.setSigma_y0( 0.4 );
+        material_data.setSigma_y0( 0.4 * GPa );
 
         material_data.addMfrontParameter( "YoungModulus", material_data.getE() );
         material_data.addMfrontParameter( "PoissonRatio", material_data.getNu() );
         material_data.addMfrontParameter( "HardeningSlope", material_data.getH() );
         material_data.addMfrontParameter( "YieldStrength", material_data.getSigma_y0() );
-
-        std::map< std::string, T > dyna_para;
-        dyna_para["beta"] = 1. / 4.;
-        dyna_para["gamma"] = 0.5;
-        dyna_para["theta"] = 1.0;
-
         break;
     }
     default: {
@@ -260,8 +258,8 @@ void addAdditionalParameters( const STUDY &study, disk::mechanics::NonLinearPara
 
         // rp.setUnsteadyScheme( disk::mechanics::DynamicType::STATIC );
         rp.setUnsteadyParameters( dyna_para );
-        rp.setLinearSolver( disk::solvers::LinearSolverType::PARDISO_LDLT );
-        rp.setNonLinearSolver( disk::mechanics::NonLinearSolverType::QNEWTON_BDIAG_JACO );
+        rp.setLinearSolver( disk::solvers::LinearSolverType::PARDISO_LU );
+        rp.setNonLinearSolver( disk::mechanics::NonLinearSolverType::NEWTON );
 
         break;
     }
@@ -272,7 +270,7 @@ void addAdditionalParameters( const STUDY &study, disk::mechanics::NonLinearPara
         dyna_para["theta"] = 1.0;
 
         rp.setUnsteadyParameters( dyna_para );
-        rp.setLinearSolver( disk::solvers::LinearSolverType::PARDISO_LDLT );
+        rp.setLinearSolver( disk::solvers::LinearSolverType::PARDISO_LU );
         rp.setNonLinearSolver( disk::mechanics::NonLinearSolverType::NEWTON );
         rp.setMaximumNumberNLIteration( 1000 );
 
@@ -294,7 +292,7 @@ auto getBoundaryConditions( const Mesh< T, 2, Storage > &msh,
 
     disk::vector_boundary_conditions< mesh_type > bnd( msh );
 
-    auto zero = [material_data]( const disk::point< T, 2 > &p ) -> result_type {
+    auto zero = [material_data]( const disk::point< T, 2 > &p, const T &time ) -> result_type {
         return result_type { 0.0, 0.0 };
     };
 
@@ -385,7 +383,7 @@ auto getBoundaryConditions( const Mesh< T, 3, Storage > &msh,
 
     disk::vector_boundary_conditions< mesh_type > bnd( msh );
 
-    auto zero = [material_data]( const disk::point< T, 3 > &p ) -> result_type {
+    auto zero = [material_data]( const disk::point< T, 3 > &p, const T &time ) -> result_type {
         return result_type { 0.0, 0., 0. };
     };
 
@@ -412,11 +410,17 @@ auto getBoundaryConditions( const Mesh< T, 3, Storage > &msh,
         break;
     }
     case STUDY::TAYLOR_ROD: {
-        // TO FIX after conversion
-        bnd.addDirichletBC( disk::DX, 12, zero );
-        bnd.addDirichletBC( disk::DY, 24, zero );
-        bnd.addDirichletBC( disk::DZ, 19, zero );
-        bnd.addDirichletBC( disk::DZ, 19, zero );
+        /*RIGHT*/
+        bnd.addDirichletBC( disk::DX, 9, zero );
+        /*LEFT*/
+        bnd.addDirichletBC( disk::DY, 8, zero );
+        /*BOTTOM*/
+        bnd.addDirichletBC( disk::DZ, 7, zero );
+        /*S_UP*/
+        auto dz = [material_data]( const disk::point< T, 3 > &p, const T &time ) -> result_type {
+            return result_type { 0.0, 0., -time * 0.001 };
+        };
+        bnd.addDirichletBC( disk::DZ, 10, dz );
         break;
     }
     default: {
@@ -530,8 +534,16 @@ void addNonLinearOptions( const Mesh< T, 2, Storage > &msh,
         break;
     }
     case STUDY::SQUARE_DYNA: {
+#ifdef HAVE_MGIS
+        /* To compile: mfront --obuild --interface=generic LogarithmicStrainPlasticity.mfront */
+        // To use a law developped with Mfront
+        const auto hypo = mgis::behaviour::Hypothesis::PLANESTRAIN;
+        const std::string filename = "src/libBehaviour.so";
+        nl.addBehavior( filename, "LogarithmicStrainPlasticity", hypo );
+#else
         nl.addBehavior( disk::mechanics::DeformationMeasure::SMALL_DEF,
                         disk::mechanics::LawType::LINEAR_HARDENING );
+#endif
 
         nl.addPointPlot( { 0.999, 0.999 }, "pointA.csv" );
         break;
@@ -574,19 +586,23 @@ void addNonLinearOptions( const Mesh< T, 3, Storage > &msh,
         break;
     }
     case STUDY::TAYLOR_ROD: {
-#ifdef HAVE_MGIS
+#ifndef HAVE_MGIS
         // To use a law developped with Mfront
         const auto hypo = mgis::behaviour::Hypothesis::TRIDIMENSIONAL;
         const std::string filename = "src/libBehaviour.dylib";
         nl.addBehavior( filename, "LogarithmicStrainPlasticity", hypo );
 #else
         // To use a native law from DiSk++
-        nl.addBehavior( disk::mechanics::DeformationMeasure::LOGARITHMIC_DEF,
+        nl.addBehavior( disk::mechanics::DeformationMeasure::SMALL_DEF,
                         disk::mechanics::LawType::LINEAR_HARDENING );
 #endif
-        nl.initial_field(
-            disk::mechanics::FieldName::VITE_CELLS,
-            []( const disk::point< T, 3 > &p ) -> auto { return result_type { 0.0, 0.0, 227 }; } );
+        // nl.initial_field(
+        //     disk::mechanics::FieldName::VITE_CELLS,
+        //     []( const disk::point< T, 3 > &p ) -> auto { return result_type { 0.0, 0.0, 227 }; }
+        //     );
+        // nl.addPointPlot( { 0., 0.00319999, 0. }, "pointA.csv" );
+        // nl.addPointPlot( { 0.00319999, 0., 0. }, "pointB.csv" );
+
         break;
     }
     default: {
