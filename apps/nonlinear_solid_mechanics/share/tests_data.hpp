@@ -421,9 +421,9 @@ auto getBoundaryConditions( const Mesh< T, 3, Storage > &msh,
 }
 
 template < template < typename, size_t, typename > class Mesh, typename T, typename Storage >
-auto getExternalLoad( const Mesh< T, 2, Storage > &msh,
-                      const disk::mechanics::MaterialData< T > &material_data,
-                      const STUDY &study ) {
+void addExternalLoad( const Mesh< T, 2, Storage > &msh,
+                      const disk::mechanics::MaterialData< T > &material_data, const STUDY &study,
+                      disk::mechanics::NonLinearSolver< Mesh< T, 2, Storage > > &nl ) {
     typedef Mesh< T, 2, Storage > mesh_type;
     typedef disk::static_vector< T, 2 > result_type;
 
@@ -438,7 +438,6 @@ auto getExternalLoad( const Mesh< T, 2, Storage > &msh,
     case STUDY::COOK_LARGE:
     case STUDY::COOK_DYNA:
     case STUDY::SQUARE_DYNA: {
-        return zero;
         break;
     }
     default: {
@@ -446,14 +445,12 @@ auto getExternalLoad( const Mesh< T, 2, Storage > &msh,
         break;
     }
     }
-
-    return zero;
 }
 
 template < template < typename, size_t, typename > class Mesh, typename T, typename Storage >
-auto getExternalLoad( const Mesh< T, 3, Storage > &msh,
-                      const disk::mechanics::MaterialData< T > &material_data,
-                      const STUDY &study ) {
+void addExternalLoad( const Mesh< T, 3, Storage > &msh,
+                      const disk::mechanics::MaterialData< T > &material_data, const STUDY &study,
+                      disk::mechanics::NonLinearSolver< Mesh< T, 3, Storage > > &nl ) {
     typedef Mesh< T, 3, Storage > mesh_type;
     typedef disk::static_vector< T, 3 > result_type;
 
@@ -465,7 +462,6 @@ auto getExternalLoad( const Mesh< T, 3, Storage > &msh,
     switch ( study ) {
     case STUDY::SPHERE_LARGE:
     case STUDY::TAYLOR_ROD: {
-        return zero;
         break;
     }
     default: {
@@ -473,8 +469,6 @@ auto getExternalLoad( const Mesh< T, 3, Storage > &msh,
         break;
     }
     }
-
-    return zero;
 }
 
 template < template < typename, size_t, typename > class Mesh, typename T, typename Storage >

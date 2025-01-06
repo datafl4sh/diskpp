@@ -199,14 +199,14 @@ error_type run_tresca_solver( Mesh< T, 2, Storage > &msh,
     nl.addBehavior( disk::mechanics::DeformationMeasure::SMALL_DEF,
                     disk::mechanics::LawType::ELASTIC );
     nl.addMaterialData( material_data );
-
+    nl.addExternalLoad( load );
     nl.initial_guess( sol );
 
     if ( nl.verbose() ) {
         std::cout << "Solving the problem ..." << '\n';
     }
 
-    disk::mechanics::SolverInfo solve_info = nl.compute( load );
+    disk::mechanics::SolverInfo solve_info = nl.compute();
 
     if ( nl.verbose() ) {
         solve_info.printInfo();
@@ -285,10 +285,10 @@ error_type run_tresca_solver( const Mesh< T, 3, Storage > &msh,
     nl.addBehavior( disk::mechanics::DeformationMeasure::SMALL_DEF,
                     disk::mechanics::LawType::ELASTIC );
     nl.addMaterialData( material_data );
-
+    nl.addExternalLoad( load );
     nl.initial_guess( sol );
 
-    disk::mechanics::SolverInfo solve_info = nl.compute( load );
+    disk::mechanics::SolverInfo solve_info = nl.compute();
 
     if ( nl.verbose() ) {
         solve_info.printInfo();

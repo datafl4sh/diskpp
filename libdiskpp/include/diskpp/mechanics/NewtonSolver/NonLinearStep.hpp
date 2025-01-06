@@ -70,6 +70,10 @@ class NonLinearStep {
     typedef vector_boundary_conditions< mesh_type > bnd_type;
     typedef Behavior< mesh_type > behavior_type;
 
+    typedef std::function< static_vector< scalar_type, mesh_type::dimension >(
+        const point< scalar_type, mesh_type::dimension > &, const scalar_type & ) >
+        func_type;
+
     bool m_verbose;
     bool m_convergence;
 
@@ -92,19 +96,16 @@ class NonLinearStep {
     /**
      * @brief Compute the Newton's step until convergence or stopped criterion
      *
-     * @tparam LoadIncrement Type of the loading function
-     * @param lf loading function
      * @param gradient_precomputed contains the precomputed gradient for HHO methods (can be empty)
      * @param stab_precomputed contains the precomputed stabilization operators for HHO methods (can
      * be empty)
      * @return NewtonSolverInfo Informations about the Newton's step during the computation
      */
-    template < typename LoadIncrement >
     NewtonSolverInfo
     compute( const mesh_type &msh, const bnd_type &bnd, const param_type &rp,
              const MeshDegreeInfo< mesh_type > &degree_infos,
              const std::shared_ptr< solvers::LinearSolver< scalar_type > > lin_solv,
-             const LoadIncrement &lf, const TimeStep< scalar_type > &current_step,
+             const std::unique_ptr< func_type > &lf, const TimeStep< scalar_type > &current_step,
              const std::vector< matrix_type > &gradient_precomputed,
              const std::vector< matrix_type > &stab_precomputed, behavior_type &behavior,
              StabCoeffManager< scalar_type > &stab_manager,

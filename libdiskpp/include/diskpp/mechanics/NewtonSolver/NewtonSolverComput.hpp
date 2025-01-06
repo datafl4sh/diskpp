@@ -123,6 +123,10 @@ class mechanical_computation {
     typedef dynamic_matrix< scalar_type > matrix_type;
     typedef dynamic_vector< scalar_type > vector_type;
 
+    typedef std::function< static_vector< scalar_type, mesh_type::dimension >(
+        const point< scalar_type, mesh_type::dimension > & ) >
+        func_type;
+
     bool two_dim;
 
     /**
@@ -254,16 +258,18 @@ class mechanical_computation {
         time_rigi += tc.elapsed();
     }
 
-    template < typename Function >
-    void compute_external_forces( const mesh_type &msh, const cell_type &cl, const Function &load,
+    void compute_external_forces( const mesh_type &msh, const cell_type &cl,
+                                  const std::unique_ptr< func_type > &load,
                                   const size_t cell_degree ) {
         timecounter tc;
         tc.tic();
 
-        // compute (f,v)_T
-        const auto cb = make_vector_monomial_basis( msh, cl, cell_degree );
-        RTF.head( cb.size() ) += make_rhs( msh, cl, cb, load, 1 );
+        if ( load ) {
+            // compute (f,v)_T
 
+            const auto cb = make_vector_monomial_basis( msh, cl, cell_degree );
+            RTF.head( cb.size() ) += make_rhs( msh, cl, cb, *load, 1 );
+        }
         tc.toc();
         time_load += tc.elapsed();
     }
@@ -362,13 +368,12 @@ class mechanical_computation {
             assert( false );
     }
 
-    template < typename Function >
     void compute( const mesh_type &msh, const cell_type &cl, const bnd_type &bnd,
                   const param_type &rp, const MeshDegreeInfo< mesh_type > &degree_infos,
-                  const Function &load, const matrix_type &RkT, const vector_type &uTF,
-                  const TimeStep< scalar_type > &time_step, behavior_type &behavior,
-                  StabCoeffManager< scalar_type > &stab_manager, const bool small_def,
-                  const bool tangent_matix = true ) {
+                  const std::unique_ptr< func_type > &load, const matrix_type &RkT,
+                  const vector_type &uTF, const TimeStep< scalar_type > &time_step,
+                  behavior_type &behavior, StabCoeffManager< scalar_type > &stab_manager,
+                  const bool small_def, const bool tangent_matix = true ) {
         timecounter tc;
 
         const auto cell_infos = degree_infos.cellDegreeInfo( msh, cl );
