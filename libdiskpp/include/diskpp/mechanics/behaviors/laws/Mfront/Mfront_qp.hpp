@@ -150,13 +150,17 @@ class Mfront_qp : public law_qp_bones< T, DIM > {
 
     std::pair< static_matrix_type3D, static_tensor< scalar_type, 3 > >
     compute_whole3D( const static_matrix_type3D &strain_curr, const data_type &data,
-                     bool tangentmodulus = true ) {
+                     bool tangentmodulus = true, bool compute_modulus = true ) {
         this->m_estrain_curr = strain_curr;
 
-        if ( tangentmodulus ) {
-            m_behavData.K[0] = 4;
+        if ( compute_modulus ) {
+            if ( tangentmodulus ) {
+                m_behavData.K[0] = 4;
+            } else {
+                m_behavData.K[0] = 1;
+            }
         } else {
-            m_behavData.K[0] = 1;
+            m_behavData.K[0] = 0;
         }
 
         // Output: PK1, d PK1 / d F
@@ -178,7 +182,9 @@ class Mfront_qp : public law_qp_bones< T, DIM > {
         // compute tangent module (consistent with the stress tensor)
 
         static_tensor< scalar_type, 3 > Aep;
-        convertTensorFromMgis( m_behavData.K, Aep );
+        if ( compute_modulus ) {
+            convertTensorFromMgis( m_behavData.K, Aep );
+        }
 
         // std::cout << "MGIS" << std::endl;
         // for (auto& elem : m_behavData.K)
@@ -214,6 +220,21 @@ class Mfront_qp : public law_qp_bones< T, DIM > {
 
     void print_markdown() const {
         mgis::behaviour::print_markdown( std::cout, *m_behav, m_behavData, 1 );
+    }
+
+    static_matrix_type compute_stress( const static_matrix_type &strain_curr,
+                                       const data_type &data ) {
+        static_matrix_type3D strain3D_curr;
+        if ( l_small_def ) {
+            strain3D_curr = convertMatrix3D( strain_curr );
+        } else {
+            strain3D_curr = convertMatrix3DwithOne( strain_curr );
+        }
+        const auto behaviors3D = this->compute_whole3D( strain3D_curr, data, false, false );
+
+        const static_matrix_type stress = convertMatrix< scalar_type, DIM >( behaviors3D.first );
+
+        return stress;
     }
 };
 #endif

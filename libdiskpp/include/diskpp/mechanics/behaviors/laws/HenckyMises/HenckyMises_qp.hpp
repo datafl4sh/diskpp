@@ -119,6 +119,17 @@ class HenckyMises_qp : public law_qp_bones< T, DIM > {
 
         return std::make_pair( stress, Cep );
     }
+
+    static_matrix_type compute_stress( const static_matrix_type &strain_curr,
+                                       const data_type &data ) {
+        // is always elastic
+        this->m_estrain_curr = convertMatrix3D( strain_curr );
+
+        // compute Cauchy stress
+        const static_matrix_type stress = this->compute_stress( data );
+
+        return stress;
+    }
 };
 } // namespace mechanics
 } // namespace disk

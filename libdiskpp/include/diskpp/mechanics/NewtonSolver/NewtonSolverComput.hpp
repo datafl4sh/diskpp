@@ -176,12 +176,23 @@ class mechanical_computation {
     std::pair< static_matrix_type, static_tensor_type >
     _compute_behavior( behavior_type &behavior, const size_t &cell_id, const size_t &qp_id,
                        const static_matrix_type &RkT_iqn, const bool small_def,
-                       const bool use_tangent_modulus ) const {
-        if ( small_def ) {
-            return behavior.compute_whole( cell_id, qp_id, RkT_iqn, use_tangent_modulus );
+                       const bool use_tangent_modulus, const bool compute_tangent ) const {
+        if ( compute_tangent ) {
+            if ( small_def ) {
+                return behavior.compute_whole( cell_id, qp_id, RkT_iqn, use_tangent_modulus );
+            } else {
+                const auto FT_iqn = convertGtoF( RkT_iqn );
+                return behavior.compute_whole( cell_id, qp_id, FT_iqn, use_tangent_modulus );
+            }
         } else {
-            const auto FT_iqn = convertGtoF( RkT_iqn );
-            return behavior.compute_whole( cell_id, qp_id, FT_iqn, use_tangent_modulus );
+            if ( small_def ) {
+                return std::make_pair( behavior.compute_stress( cell_id, qp_id, RkT_iqn ),
+                                       static_tensor_type() );
+            } else {
+                const auto FT_iqn = convertGtoF( RkT_iqn );
+                return std::make_pair( behavior.compute_stress( cell_id, qp_id, FT_iqn ),
+                                       static_tensor_type() );
+            }
         }
     }
 
@@ -446,8 +457,8 @@ class mechanical_computation {
             // Compute behavior
             // if small_def stress = Cauchy else stress = PK1
             tc.tic();
-            const auto [stress, Cep] =
-                _compute_behavior( behavior, cell_id, i_qp, RkT_iqn, small_def, tangent_matix );
+            const auto [stress, Cep] = _compute_behavior( behavior, cell_id, i_qp, RkT_iqn,
+                                                          small_def, true, tangent_matix );
             tc.toc();
             time_law += tc.elapsed();
             // std::cout << "stress: " << stress.norm() << std::endl;
@@ -624,7 +635,7 @@ class mechanical_computation {
             // if small_def stress = Cauchy else stress = PK1
             tc.tic();
             const auto [stress, Cep] = this->_compute_behavior( behavior, cell_id, i_qp, RkT_iqn,
-                                                                small_def, use_tangente );
+                                                                small_def, use_tangente, true );
             tc.toc();
             time_law += tc.elapsed();
             // std::cout << "stress: " << stress.norm() << std::endl;
