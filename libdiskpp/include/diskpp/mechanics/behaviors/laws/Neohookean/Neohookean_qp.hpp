@@ -235,6 +235,15 @@ class Neohookean_qp : public law_qp_bones< T, DIM > {
 
         return std::make_pair( stress, Cep );
     }
+
+    static_matrix_type compute_stress( const static_matrix_type &F_curr, const data_type &data ) {
+        const static_matrix_type3D F3D = convertMatrix3DwithOne( F_curr );
+        const auto behaviors3D = compute_whole3D( F3D, data, false );
+
+        const static_matrix_type stress = convertMatrix< scalar_type, DIM >( behaviors3D.first );
+
+        return stress;
+    }
 };
 } // namespace mechanics
 } // namespace disk

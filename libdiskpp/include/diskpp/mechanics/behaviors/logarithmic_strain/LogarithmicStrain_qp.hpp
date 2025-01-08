@@ -170,6 +170,7 @@ class LogarithmicStrain_qp {
     }
 
     void update() { m_law_hpp_qp.update(); }
+    void restore() { m_law_hpp_qp.restore(); }
 
     static_matrix_type compute_stress( const data_type &data ) const {
         return convertMatrix< scalar_type, DIM >( this->compute_stress3D( data ) );
@@ -194,6 +195,15 @@ class LogarithmicStrain_qp {
             convertTensor< scalar_type, DIM >( behaviors3D.second );
 
         return std::make_pair( PK1, A );
+    }
+
+    static_matrix_type compute_stress( const static_matrix_type &F_curr, const data_type &data ) {
+        const static_matrix_type3D F_curr_3D = convertMatrix3DwithOne( F_curr );
+        const auto behaviors3D = compute_whole3D( F_curr_3D, data, false );
+
+        const static_matrix_type PK1 = convertMatrix< scalar_type, DIM >( behaviors3D.first );
+
+        return PK1;
     }
 
     static_matrix_type3D compute_stress3D( const data_type &data ) const {

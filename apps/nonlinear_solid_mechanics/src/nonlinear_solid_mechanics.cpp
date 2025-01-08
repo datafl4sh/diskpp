@@ -49,11 +49,11 @@ void run_nl_solid_mechanics_solver( const Mesh< T, N, Storage > &msh,
     /* Get boundary conditions */
     const auto bnd = getBoundaryConditions( msh, material_data, study );
 
-    /* Get external load */
-    const auto load = getExternalLoad( msh, material_data, study );
-
     /* Create nonlinear solver */
     disk::mechanics::NonLinearSolver< mesh_type > nl( msh, bnd, rp );
+
+    /* Get external load */
+    addExternalLoad( msh, material_data, study, nl );
 
     /* Add non linear option */
     addNonLinearOptions( msh, material_data, study, nl );
@@ -62,7 +62,7 @@ void run_nl_solid_mechanics_solver( const Mesh< T, N, Storage > &msh,
         std::cout << "Solving the problem ..." << '\n';
     }
 
-    disk::mechanics::SolverInfo solve_info = nl.compute( load );
+    disk::mechanics::SolverInfo solve_info = nl.compute();
 
     if ( nl.verbose() ) {
         solve_info.printInfo();
@@ -105,7 +105,7 @@ int main( int argc, char **argv ) {
     mesh_filename = argv[0];
 
     /* Define study parameters to use */
-    const STUDY study = STUDY::SQUARE_DYNA;
+    const STUDY study = STUDY::TAYLOR_ROD;
 
     addAdditionalParameters( study, rp );
 

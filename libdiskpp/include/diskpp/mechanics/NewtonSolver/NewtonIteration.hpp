@@ -69,7 +69,8 @@ class NewtonIteration : public GenericIteration< MeshType > {
         : GenericIteration< MeshType >( msh, bnd, rp, degree_infos, lin_solv, current_step ) {}
 
     AssemblyInfo assemble( const mesh_type &msh, const bnd_type &bnd, const param_type &rp,
-                           const MeshDegreeInfo< mesh_type > &degree_infos, const func_type &lf,
+                           const MeshDegreeInfo< mesh_type > &degree_infos,
+                           const std::unique_ptr< func_type > &lf,
                            const std::vector< matrix_type > &gradient_precomputed,
                            const std::vector< matrix_type > &stab_precomputed,
                            behavior_type &behavior, StabCoeffManager< scalar_type > &stab_manager,
@@ -96,10 +97,7 @@ class NewtonIteration : public GenericIteration< MeshType > {
             resi_cells.reserve( msh.cells_size() );
         }
 
-        auto rlf = [&lf,
-                    &current_time]( const point< scalar_type, mesh_type::dimension > &p ) -> auto {
-            return lf( p, current_time );
-        };
+        auto rlf = this->_getLoad( lf, current_time );
 
         timecounter tc, ttot;
 

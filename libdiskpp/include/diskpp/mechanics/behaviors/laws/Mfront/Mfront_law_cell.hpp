@@ -86,6 +86,13 @@ class Mfront_law_cell {
         }
     }
 
+    void restore( const data_type &data ) {
+        for ( auto &qp : m_list_qp ) {
+            qp.restore();
+            qp.addMaterialParameters( data );
+        }
+    }
+
     void addInitialMaterialParameters( const data_type &data ) {
         for ( auto &qp : m_list_qp ) {
             qp.addMaterialParameters( data );

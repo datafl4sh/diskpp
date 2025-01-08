@@ -98,6 +98,12 @@ class IsotropicHardeningVMis_qp : public law_qp_bones< T, DIM > {
         m_p_prev = m_p_curr;
     }
 
+    void restore() {
+        law_qp_bones< T, DIM >::restore();
+        m_pstrain_curr = m_pstrain_prev;
+        m_p_curr = m_p_prev;
+    }
+
     static_matrix_type3D compute_stress3D( const data_type &data ) const {
         const static_matrix_type3D Id = static_matrix_type3D::Identity();
 
@@ -280,6 +286,16 @@ class IsotropicHardeningVMis_qp : public law_qp_bones< T, DIM > {
             convertTensor< scalar_type, DIM >( behaviors3D.second );
 
         return std::make_pair( stress, Cep );
+    }
+
+    static_matrix_type compute_stress( const static_matrix_type &strain_curr,
+                                       const data_type &data ) {
+        const static_matrix_type3D strain3D_curr = convertMatrix3D( strain_curr );
+        const auto behaviors3D = this->compute_whole3D( strain3D_curr, data, false );
+
+        const static_matrix_type stress = convertMatrix< scalar_type, DIM >( behaviors3D.first );
+
+        return stress;
     }
 };
 } // namespace mechanics

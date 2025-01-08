@@ -123,6 +123,10 @@ class mechanical_computation {
     typedef dynamic_matrix< scalar_type > matrix_type;
     typedef dynamic_vector< scalar_type > vector_type;
 
+    typedef std::function< static_vector< scalar_type, mesh_type::dimension >(
+        const point< scalar_type, mesh_type::dimension > & ) >
+        func_type;
+
     bool two_dim;
 
     /**
@@ -172,12 +176,23 @@ class mechanical_computation {
     std::pair< static_matrix_type, static_tensor_type >
     _compute_behavior( behavior_type &behavior, const size_t &cell_id, const size_t &qp_id,
                        const static_matrix_type &RkT_iqn, const bool small_def,
-                       const bool use_tangent_modulus ) const {
-        if ( small_def ) {
-            return behavior.compute_whole( cell_id, qp_id, RkT_iqn, use_tangent_modulus );
+                       const bool use_tangent_modulus, const bool compute_tangent ) const {
+        if ( compute_tangent ) {
+            if ( small_def ) {
+                return behavior.compute_whole( cell_id, qp_id, RkT_iqn, use_tangent_modulus );
+            } else {
+                const auto FT_iqn = convertGtoF( RkT_iqn );
+                return behavior.compute_whole( cell_id, qp_id, FT_iqn, use_tangent_modulus );
+            }
         } else {
-            const auto FT_iqn = convertGtoF( RkT_iqn );
-            return behavior.compute_whole( cell_id, qp_id, FT_iqn, use_tangent_modulus );
+            if ( small_def ) {
+                return std::make_pair( behavior.compute_stress( cell_id, qp_id, RkT_iqn ),
+                                       static_tensor_type() );
+            } else {
+                const auto FT_iqn = convertGtoF( RkT_iqn );
+                return std::make_pair( behavior.compute_stress( cell_id, qp_id, FT_iqn ),
+                                       static_tensor_type() );
+            }
         }
     }
 
@@ -254,16 +269,18 @@ class mechanical_computation {
         time_rigi += tc.elapsed();
     }
 
-    template < typename Function >
-    void compute_external_forces( const mesh_type &msh, const cell_type &cl, const Function &load,
+    void compute_external_forces( const mesh_type &msh, const cell_type &cl,
+                                  const std::unique_ptr< func_type > &load,
                                   const size_t cell_degree ) {
         timecounter tc;
         tc.tic();
 
-        // compute (f,v)_T
-        const auto cb = make_vector_monomial_basis( msh, cl, cell_degree );
-        RTF.head( cb.size() ) += make_rhs( msh, cl, cb, load, 1 );
+        if ( load ) {
+            // compute (f,v)_T
 
+            const auto cb = make_vector_monomial_basis( msh, cl, cell_degree );
+            RTF.head( cb.size() ) += make_rhs( msh, cl, cb, *load, 1 );
+        }
         tc.toc();
         time_load += tc.elapsed();
     }
@@ -362,13 +379,12 @@ class mechanical_computation {
             assert( false );
     }
 
-    template < typename Function >
     void compute( const mesh_type &msh, const cell_type &cl, const bnd_type &bnd,
                   const param_type &rp, const MeshDegreeInfo< mesh_type > &degree_infos,
-                  const Function &load, const matrix_type &RkT, const vector_type &uTF,
-                  const TimeStep< scalar_type > &time_step, behavior_type &behavior,
-                  StabCoeffManager< scalar_type > &stab_manager, const bool small_def,
-                  const bool tangent_matix = true ) {
+                  const std::unique_ptr< func_type > &load, const matrix_type &RkT,
+                  const vector_type &uTF, const TimeStep< scalar_type > &time_step,
+                  behavior_type &behavior, StabCoeffManager< scalar_type > &stab_manager,
+                  const bool small_def, const bool tangent_matix = true ) {
         timecounter tc;
 
         const auto cell_infos = degree_infos.cellDegreeInfo( msh, cl );
@@ -441,8 +457,8 @@ class mechanical_computation {
             // Compute behavior
             // if small_def stress = Cauchy else stress = PK1
             tc.tic();
-            const auto [stress, Cep] =
-                _compute_behavior( behavior, cell_id, i_qp, RkT_iqn, small_def, tangent_matix );
+            const auto [stress, Cep] = _compute_behavior( behavior, cell_id, i_qp, RkT_iqn,
+                                                          small_def, true, tangent_matix );
             tc.toc();
             time_law += tc.elapsed();
             // std::cout << "stress: " << stress.norm() << std::endl;
@@ -619,7 +635,7 @@ class mechanical_computation {
             // if small_def stress = Cauchy else stress = PK1
             tc.tic();
             const auto [stress, Cep] = this->_compute_behavior( behavior, cell_id, i_qp, RkT_iqn,
-                                                                small_def, use_tangente );
+                                                                small_def, use_tangente, true );
             tc.toc();
             time_law += tc.elapsed();
             // std::cout << "stress: " << stress.norm() << std::endl;

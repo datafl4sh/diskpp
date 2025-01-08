@@ -348,10 +348,31 @@ template < typename T >
 bool is_inside( const generic_mesh< T, 3 > &msh, const typename generic_mesh< T, 3 >::cell &cl,
                 const typename generic_mesh< T, 3 >::point_type &pt ) {
 
-    auto rss = split_in_raw_tetrahedra( msh, cl );
-    for ( auto &rs : rss ) {
-        if ( is_inside( rs, pt ) ) {
-            return true;
+    // search in bounding box
+    const auto pts = points( msh, cl );
+
+    T xmin = std::numeric_limits< T >::max(), ymin = xmin, zmin = xmin;
+    T xmax = std::numeric_limits< T >::min(), ymax = xmax, zmax = xmax;
+
+    for ( auto &p : pts ) {
+        xmin = std::min( xmin, p.x() );
+        xmax = std::max( xmax, p.x() );
+        ymin = std::min( ymin, p.y() );
+        ymax = std::max( ymax, p.y() );
+        zmin = std::min( zmin, p.z() );
+        zmax = std::max( zmax, p.z() );
+    }
+
+    if ( xmin <= pt.x() && pt.x() <= xmax ) {
+        if ( ymin <= pt.y() && pt.y() <= ymax ) {
+            if ( zmin <= pt.z() && pt.z() <= zmax ) {
+                auto rss = split_in_raw_tetrahedra( msh, cl );
+                for ( auto &rs : rss ) {
+                    if ( is_inside( rs, pt ) ) {
+                        return true;
+                    }
+                }
+            }
         }
     }
 

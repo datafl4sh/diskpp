@@ -78,6 +78,10 @@ class NonLinearSolver {
     typedef Behavior< mesh_type > behavior_type;
     typedef PlotPointOverTime< mesh_type > ppt_type;
 
+    typedef std::function< static_vector< scalar_type, mesh_type::dimension >(
+        const point< scalar_type, mesh_type::dimension > &, const scalar_type & ) >
+        func_type;
+
     bnd_type m_bnd;
     const mesh_type &m_msh;
     param_type m_rp;
@@ -93,6 +97,8 @@ class NonLinearSolver {
     std::shared_ptr< disk::solvers::LinearSolver< scalar_type > > m_lin_solv;
 
     std::vector< ppt_type > m_ppt;
+
+    std::unique_ptr< func_type > m_load;
 
     bool m_verbose, m_convergence;
 
@@ -230,6 +236,7 @@ class NonLinearSolver {
           m_bnd( bnd ),
           m_stab_manager( msh, rp.m_beta ),
           m_fields( getNumberOfStepToSave( rp ) ),
+          m_load( nullptr ),
           m_lin_solv(
               std::make_shared< solvers::LinearSolver< scalar_type > >( rp.getLinearSolver() ) ) {
         if ( m_verbose ) {
@@ -431,8 +438,10 @@ class NonLinearSolver {
         m_ppt.push_back( ppt );
     }
 
-    template < typename LoadFunction >
-    SolverInfo compute( const LoadFunction &lf ) {
+    void addExternalLoad( const std::unique_ptr< func_type > &load ) { m_load = load; }
+    void addExternalLoad( const func_type load ) { m_load = std::make_unique<func_type>( load ); }
+
+    SolverInfo compute() {
         // Precomputation
         if ( m_rp.m_precomputation ) {
             timecounter t1;
@@ -522,7 +531,7 @@ class NonLinearSolver {
 
             NonLinearStep< mesh_type > nlStep( m_rp );
 
-            newton_info = nlStep.compute( m_msh, m_bnd, m_rp, m_degree_infos, m_lin_solv, lf,
+            newton_info = nlStep.compute( m_msh, m_bnd, m_rp, m_degree_infos, m_lin_solv, m_load,
                                           current_step, m_gradient_precomputed, m_stab_precomputed,
                                           m_behavior, m_stab_manager, m_fields );
 
@@ -556,6 +565,7 @@ class NonLinearSolver {
                     }
 
                     list_time_step.splitCurrentTimeStep();
+                    m_behavior.restore();
                     m_fields.restore();
                 }
             } else {

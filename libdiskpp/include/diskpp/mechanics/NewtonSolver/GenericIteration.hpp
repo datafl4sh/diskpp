@@ -103,6 +103,21 @@ class GenericIteration {
 
     bool m_verbose;
 
+    std::unique_ptr< std::function< static_vector< scalar_type, mesh_type::dimension >(
+        const point< scalar_type, mesh_type::dimension > & ) > >
+    _getLoad( const std::unique_ptr< func_type > &lf, const scalar_type &time ) {
+        if ( lf ) {
+            return std::make_unique<
+                std::function< static_vector< scalar_type, mesh_type::dimension >(
+                    const point< scalar_type, mesh_type::dimension > & ) > >(
+                [&lf, &time]( const point< scalar_type, mesh_type::dimension > &p ) -> auto {
+                    return ( *lf )( p, time );
+                } );
+        }
+
+        return nullptr;
+    }
+
   public:
     GenericIteration() : m_verbose( false ) {};
 
@@ -146,7 +161,7 @@ class GenericIteration {
 
     virtual AssemblyInfo assemble( const mesh_type &msh, const bnd_type &bnd, const param_type &rp,
                                    const MeshDegreeInfo< mesh_type > &degree_infos,
-                                   const func_type &lf,
+                                   const std::unique_ptr< func_type > &lf,
                                    const std::vector< matrix_type > &gradient_precomputed,
                                    const std::vector< matrix_type > &stab_precomputed,
                                    behavior_type &behavior,
@@ -233,8 +248,11 @@ class GenericIteration {
         // const scalar_type error = std::max( relative_displ, relative_error );
         const scalar_type error = relative_error;
 
-        if ( !std::isfinite( error ) )
+        if ( !std::isfinite( error ) || std::isnan( error ) || !std::isfinite( max_error ) ||
+             std::isnan( max_error ) || !std::isfinite( residual ) || std::isnan( residual ) ||
+             !std::isfinite( -residual ) || std::isnan( -residual ) || residual > 1e100 ) {
             throw std::runtime_error( "Norm of residual is not finite" );
+        }
 
         if ( error <= rp.getConvergenceCriteria() ) {
             return true;
