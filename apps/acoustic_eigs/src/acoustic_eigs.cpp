@@ -229,7 +229,9 @@ acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
         return BTT_lu.solve(v);
     };
 
-//#if 0
+//#define USE_FEAST
+
+#ifndef USE_FEAST
     /********* EIGSOLVER (BJD) *********/
     std::cout << "Block Jacobi-Davidson eigensolver" << std::endl;
     tc.tic();
@@ -243,9 +245,7 @@ acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
     disk::solvers::block_jacobi_davidson(params, apply_A,
         assm.BTT, eigvecs, eigvals);
     std::cout << "Eigensolver time: " << tc.toc() << " seconds\n";
-//#endif
-    
-#if 0
+#else
     /********* EIGSOLVER (FEAST) *********/
     std::cout << "FEAST eigensolver" << std::endl;
     tc.tic();
@@ -256,13 +256,15 @@ acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
     params.max_eigval = 50;
     params.verbose = true;
     params.tolerance = 7;
-    disk::solvers::feast_mf(params, apply_A,
-        assm.BTT, eigvecs, eigvals);
+    //disk::solvers::feast_mf(params, apply_A,
+    //    assm.BTT, eigvecs, eigvals);
 
-    //std::cout << "Computing KTT\n";
-    //disk::sparse_matrix<T> KTT = assm.ATT - assm.ATF*AFF_lu.solve(assm.AFT);
-    //std::cout << "Entering FEAST\n";
-    //disk::solvers::feast(params, KTT, assm.BTT, eigvecs, eigvals);
+    std::cout << "Computing KTT\n";
+    disk::dynamic_matrix<T> AFT = assm.AFT; /* This copy is necessary
+        otherwise with sparse RHS PardisoLDLT is super slow */
+    disk::dynamic_matrix<T> KTT = assm.ATT - assm.ATF*AFF_lu.solve(AFT);
+    std::cout << "Entering FEAST\n";
+    disk::solvers::feast(params, KTT, assm.BTT, eigvecs, eigvals);
 
     std::cout << "Eigensolver time: " << tc.toc() << " seconds\n";
 #endif
@@ -301,22 +303,55 @@ acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
 
 }
 
-int main(int argc, char **argv)
+template<typename Mesh>
+void
+run_eigsolver(const Mesh& msh)
 {
-    std::string mesh_filename = argv[1];
-    using T = double;
-    using mesh_type = disk::simplicial_mesh<T,3>;
-    mesh_type msh;
-    disk::gmsh_geometry_loader< mesh_type > loader;
-    loader.read_mesh(mesh_filename);
-    loader.populate_mesh(msh);
-
     disk::silo_database db;
     db.create("acoustic_eigs.silo");
     //acoustic_eigs_dg(msh, 2, 10, db);
 
     acoustic_eigs_hho(msh, 2, db);
+}
 
+int main(int argc, char **argv)
+{
+    if (argc < 2) {
+        std::cout << "missing args\n";
+        return 1; 
+    }
+    
+    std::string mesh_filename = argv[1];
+    using T = double;
+ 
+ 
+    if (std::regex_match(mesh_filename, std::regex(".*\\.geo2s$") ))
+    {
+        std::cout << "Guessed mesh format: GMSH 2D simplicials" << std::endl;
+        using mesh_type = disk::triangular_mesh<T>;
+        mesh_type msh;
+        disk::gmsh_geometry_loader< mesh_type > loader;
+        loader.read_mesh(mesh_filename);
+        loader.populate_mesh(msh);
 
+        run_eigsolver(msh);
+        return 0;
+    }
+ 
+ 
+    if (std::regex_match(mesh_filename, std::regex(".*\\.geo3s$") ))
+    {
+        std::cout << "Guessed mesh format: GMSH 3D simplicials" << std::endl;
+        using mesh_type = disk::tetrahedral_mesh<T>;
+        mesh_type msh;
+        disk::gmsh_geometry_loader< mesh_type > loader;
+        loader.read_mesh(mesh_filename);
+        loader.populate_mesh(msh);
+
+        run_eigsolver(msh);
+        return 0;
+    }
+
+    
     return 0;
 }
