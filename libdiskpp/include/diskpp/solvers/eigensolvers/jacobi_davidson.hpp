@@ -150,7 +150,7 @@ block_jacobi_davidson(const bjd_params& params,
         }
         //std::cout << maxnorm << " " << prev_r << std::endl;
 
-        if ( (maxnorm/prev_r) > 1.1 ) {
+        if ( (maxnorm/prev_r) > 1.1 and innerp.max_iter < 100 ) {
             innerp.max_iter *= 2;
         }
         prev_r = maxnorm;

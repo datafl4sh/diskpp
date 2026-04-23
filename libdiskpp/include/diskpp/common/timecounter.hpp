@@ -30,6 +30,7 @@
 
 #pragma once
 
+#include <sys/resource.h>
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -70,9 +71,44 @@ public:
     }
 };
 
-std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const timecounter& tc)
 {
     os << tc.elapsed();
     return os;
 }
+
+class resmon
+{
+    rusage start{};
+    std::string label;
+
+    static double to_seconds(const timeval& tv) {
+        return tv.tv_sec + tv.tv_usec * 1e-6;
+    }
+
+public:
+    explicit resmon(std::string name = "resource monitor")
+        : label(name) {
+        getrusage(RUSAGE_SELF, &start);
+    }
+
+    ~resmon() {
+        rusage end{};
+        getrusage(RUSAGE_SELF, &end);
+
+        long delta_maxrss = end.ru_maxrss - start.ru_maxrss;
+
+        double user_time =
+            to_seconds(end.ru_utime) - to_seconds(start.ru_utime);
+
+        double sys_time =
+            to_seconds(end.ru_stime) - to_seconds(start.ru_stime);
+
+        std::cout << "[resmon] " << label << "\n"
+                  << "    peak RSS   " << end.ru_maxrss << " KB\n"
+                  << "  Δ peak RSS   " << delta_maxrss << " KB\n"
+                  << "  Δ user time  " << user_time << " s\n"
+                  << "  Δ sys time   " << sys_time << " s\n";
+    }
+};

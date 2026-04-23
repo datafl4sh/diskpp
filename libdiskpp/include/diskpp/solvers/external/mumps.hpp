@@ -156,6 +156,10 @@ struct mumps_state
     /* From the MUMPS documentation it is not clear which
      * should be the lifetime of Aii and Aja */
     std::vector<int>    Aii, Aja;
+
+    std::vector<int>    irhs_sparse;
+    std::vector<int>    irhs_ptr;
+    std::vector<double>      rhs_sparse;
 };
 
 template<typename T>
@@ -252,11 +256,75 @@ public:
 
         state->id.nrhs = (nrhs > 0) ? nrhs : b.cols();
         state->id.rhs = mumps_priv::mumps_cast_from<T>(ret.data());
+        /* -----> */ state->id.lrhs = state->id.n;
         
         state->id.job = MUMPS_JOB_SOLVE;
         mumps_priv::call_mumps(&state->id);
 
         return ret;
+    }
+
+    template<int _Options, typename _Index>
+    Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>
+    solve(Eigen::SparseMatrix<T, _Options, _Index>& B) const
+    {
+        static_assert(!(_Options & Eigen::RowMajor), "RowMajor RHS not supported");
+
+        B.makeCompressed();
+
+        const int n    = state->id.n;
+        const int nrhs = B.cols();
+
+        if (B.rows() != n)
+            throw std::invalid_argument("RHS dimension mismatch");
+
+        // Enable sparse RHS mode
+        state->id.icntl[19] = 1; // ICNTL(20) in Fortran indexing
+
+        state->id.nrhs   = nrhs;
+        state->id.lrhs   = n;
+        state->id.nz_rhs = B.nonZeros();
+
+        // Resize storage
+        state->irhs_sparse.resize(B.nonZeros());
+        state->irhs_ptr.resize(nrhs + 1);
+        state->rhs_sparse.resize(B.nonZeros());
+
+        int nnz = 0;
+
+        for (int j = 0; j < nrhs; ++j)
+        {
+            state->irhs_ptr[j] = nnz + 1; // 1-based
+
+            for (typename Eigen::SparseMatrix<T, _Options, _Index>::InnerIterator it(B, j); it; ++it)
+            {
+                state->irhs_sparse[nnz] = it.row() + 1;
+                state->rhs_sparse[nnz]  = it.value();
+                nnz++;
+            }
+        }
+
+        state->irhs_ptr[nrhs] = nnz + 1;
+
+        // Attach to MUMPS
+        state->id.irhs_sparse = state->irhs_sparse.data();
+        state->id.irhs_ptr    = state->irhs_ptr.data();
+        state->id.rhs_sparse  = mumps_priv::mumps_cast_from<T>(state->rhs_sparse.data());
+
+        // Output will be dense
+        Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> X(n, nrhs);
+        state->id.rhs = mumps_priv::mumps_cast_from<T>(X.data());
+
+        state->id.job = MUMPS_JOB_SOLVE;
+        mumps_priv::call_mumps(&state->id);
+
+        // IMPORTANT: reset mode (avoid breaking next dense solve)
+        state->id.icntl[19] = 0;
+        state->id.irhs_sparse = nullptr;
+        state->id.irhs_ptr    = nullptr;
+        state->id.rhs_sparse  = nullptr;
+
+        return X;
     }
     
     void set_output(int oflags)

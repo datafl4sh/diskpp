@@ -162,6 +162,96 @@ acoustic_eigs_dg(Mesh& msh, size_t degree,
     }
 }
 
+template<typename T>
+void solve_feast_dense(auto assm, disk::dynamic_matrix<T>& eigvecs,
+    disk::dynamic_vector<T>& eigvals)
+{
+    timecounter tc;
+
+    std::cout << "MUMPS factorization..." << std::flush;
+    tc.tic();
+    disk::solvers::mumps_solver<T> AFF_lu_mumps;
+    AFF_lu_mumps.factorize(assm.AFF);
+    std::cout << tc.toc() << " seconds\n";
+
+    std::cout << "FEAST eigensolver (dense)" << std::endl;
+    tc.tic();
+    disk::solvers::feast_eigensolver_params<T> params;
+    params.subspace_size = 20;
+    params.max_iter = 10;
+    params.min_eigval = 1;
+    params.max_eigval = 50;
+    params.verbose = true;
+    params.tolerance = 7;
+
+    std::cout << "Computing KTT\n";
+    disk::dynamic_matrix<T> KTT =
+        assm.ATT - assm.ATF*AFF_lu_mumps.solve(assm.AFT);
+    std::cout << "Entering FEAST\n";
+    disk::solvers::feast(params, KTT, assm.BTT, eigvecs, eigvals);
+
+    std::cout << "Eigensolver time: " << tc.toc() << " seconds\n";
+}
+
+template<typename T>
+void solve_feast_mf(auto assm, disk::dynamic_matrix<T>& eigvecs,
+    disk::dynamic_vector<T>& eigvals)
+{
+    timecounter tc;
+
+    Eigen::PardisoLDLT< Eigen::SparseMatrix<T> > AFF_lu(assm.AFF);
+
+    auto apply_A = [&]<int ncols>(
+        const Eigen::Matrix<T, Eigen::Dynamic, ncols>& v) ->
+            Eigen::Matrix<T, Eigen::Dynamic, ncols> {
+        Eigen::Matrix<T, Eigen::Dynamic, ncols> z = assm.AFT*v;
+        return assm.ATT*v - assm.ATF*AFF_lu.solve(z);
+    };
+
+    std::cout << "FEAST eigensolver (matrix-free)" << std::endl;
+    tc.tic();
+    disk::solvers::feast_eigensolver_params<T> params;
+    params.subspace_size = 20;
+    params.max_iter = 10;
+    params.min_eigval = 1;
+    params.max_eigval = 50;
+    params.verbose = true;
+    params.tolerance = 7;
+    disk::solvers::feast_mf(params, apply_A, assm.BTT, eigvecs, eigvals);
+
+    std::cout << "Eigensolver time: " << tc.toc() << " seconds\n";
+}
+
+
+template<typename T>
+void solve_bjd_mf(auto assm, disk::dynamic_matrix<T>& eigvecs,
+    disk::dynamic_vector<T>& eigvals)
+{
+    timecounter tc;
+
+    Eigen::PardisoLDLT< Eigen::SparseMatrix<T> > AFF_lu(assm.AFF);
+
+    auto apply_A = [&]<int ncols>(
+        const Eigen::Matrix<T, Eigen::Dynamic, ncols>& v) ->
+            Eigen::Matrix<T, Eigen::Dynamic, ncols> {
+        Eigen::Matrix<T, Eigen::Dynamic, ncols> z = assm.AFT*v;
+        return assm.ATT*v - assm.ATF*AFF_lu.solve(z);
+    };
+
+    std::cout << "Block Jacobi-Davidson eigensolver" << std::endl;
+    tc.tic();
+    disk::solvers::bjd_params params;
+    params.block_size = 10;
+    params.max_outer_iters = 200;
+    params.max_inner_iters = 5;
+    params.max_subspace_growth = 10;
+    params.inner_tol = 1e-4;
+    params.verbose = true;
+    disk::solvers::block_jacobi_davidson(params, apply_A,
+        assm.BTT, eigvecs, eigvals);
+    std::cout << "Eigensolver time: " << tc.toc() << " seconds\n";
+}
+
 template<typename Mesh>
 void
 acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
@@ -207,68 +297,11 @@ acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
 
     std::cout << tc.toc() << " seconds\n";
 
-    /********* LU *********/
-    std::cout << "Computing LU of AFF and BTT..." << std::flush;
-    tc.tic();
-    Eigen::PardisoLDLT< Eigen::SparseMatrix<T> > AFF_lu(assm.AFF);
-    Eigen::PardisoLDLT< Eigen::SparseMatrix<T> > BTT_lu(assm.BTT);
-    std::cout << tc.toc() << " seconds\n";
 
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> eigvecs;
     Eigen::Matrix<T, Eigen::Dynamic, 1> eigvals;
 
-
-    auto apply_A = [&]<int ncols>(
-        const Eigen::Matrix<T, Eigen::Dynamic, ncols>& v) ->
-            Eigen::Matrix<T, Eigen::Dynamic, ncols> {
-        Eigen::Matrix<T, Eigen::Dynamic, ncols> z = assm.AFT*v;
-        return assm.ATT*v - assm.ATF*AFF_lu.solve(z);
-    };
-
-    auto solve_BTT = [&](const dynamic_vector<T>& v) -> dynamic_vector<T> {
-        return BTT_lu.solve(v);
-    };
-
-//#define USE_FEAST
-
-#ifndef USE_FEAST
-    /********* EIGSOLVER (BJD) *********/
-    std::cout << "Block Jacobi-Davidson eigensolver" << std::endl;
-    tc.tic();
-    disk::solvers::bjd_params params;
-    params.block_size = 10;
-    params.max_outer_iters = 200;
-    params.max_inner_iters = 5;
-    params.max_subspace_growth = 10;
-    params.inner_tol = 1e-4;
-    params.verbose = true;
-    disk::solvers::block_jacobi_davidson(params, apply_A,
-        assm.BTT, eigvecs, eigvals);
-    std::cout << "Eigensolver time: " << tc.toc() << " seconds\n";
-#else
-    /********* EIGSOLVER (FEAST) *********/
-    std::cout << "FEAST eigensolver" << std::endl;
-    tc.tic();
-    disk::solvers::feast_eigensolver_params<T> params;
-    params.subspace_size = 20;
-    params.max_iter = 10;
-    params.min_eigval = 1;
-    params.max_eigval = 50;
-    params.verbose = true;
-    params.tolerance = 7;
-    //disk::solvers::feast_mf(params, apply_A,
-    //    assm.BTT, eigvecs, eigvals);
-
-    std::cout << "Computing KTT\n";
-    disk::dynamic_matrix<T> AFT = assm.AFT; /* This copy is necessary
-        otherwise with sparse RHS PardisoLDLT is super slow */
-    disk::dynamic_matrix<T> KTT = assm.ATT - assm.ATF*AFF_lu.solve(AFT);
-    std::cout << "Entering FEAST\n";
-    disk::solvers::feast(params, KTT, assm.BTT, eigvecs, eigvals);
-
-    std::cout << "Eigensolver time: " << tc.toc() << " seconds\n";
-#endif
-
+    solve_bjd_mf(assm, eigvecs, eigvals);
 
     T pisq = M_PI * M_PI;
 
@@ -316,6 +349,8 @@ run_eigsolver(const Mesh& msh)
 
 int main(int argc, char **argv)
 {
+    resmon rm("main");
+
     if (argc < 2) {
         std::cout << "missing args\n";
         return 1; 
