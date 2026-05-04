@@ -31,6 +31,7 @@
 #pragma once
 
 #include <sys/resource.h>
+#include <sys/time.h>
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -80,7 +81,8 @@ operator<<(std::ostream& os, const timecounter& tc)
 
 class resmon
 {
-    rusage start{};
+    rusage  start{};
+    timeval start_time{};
     std::string label;
 
     static double to_seconds(const timeval& tv) {
@@ -91,11 +93,14 @@ public:
     explicit resmon(std::string name = "resource monitor")
         : label(name) {
         getrusage(RUSAGE_SELF, &start);
+        gettimeofday(&start_time, nullptr);
     }
 
     ~resmon() {
         rusage end{};
         getrusage(RUSAGE_SELF, &end);
+        timeval end_time{};
+        gettimeofday(&end_time, nullptr);
 
         long delta_maxrss = end.ru_maxrss - start.ru_maxrss;
 
@@ -105,10 +110,14 @@ public:
         double sys_time =
             to_seconds(end.ru_stime) - to_seconds(start.ru_stime);
 
+        double wall_time =
+            to_seconds(end_time) - to_seconds(start_time);
+
         std::cout << "[resmon] " << label << "\n"
-                  << "    peak RSS   " << end.ru_maxrss << " KB\n"
-                  << "  Δ peak RSS   " << delta_maxrss << " KB\n"
-                  << "  Δ user time  " << user_time << " s\n"
-                  << "  Δ sys time   " << sys_time << " s\n";
+                  << " peak RSS         " << end.ru_maxrss << " KB\n"
+                  << " delta peak RSS   " << delta_maxrss << " KB\n"
+                  << " user cpu time    " << user_time << " s\n"
+                  << " sys cpu time     " << sys_time << " s\n"
+                  << " wall time        " << wall_time << " s\n";
     }
 };

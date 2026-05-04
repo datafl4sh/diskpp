@@ -14,6 +14,7 @@
 #include <set>
 #include <string>
 #include <filesystem>
+#include <iomanip>
 
 
 
@@ -38,6 +39,7 @@
 
 #include "diskpp/solvers/eigensolvers.hpp"
 
+#include <Spectra/SymEigsSolver.h>
 namespace disk {
 
 template<typename Mesh>
@@ -252,6 +254,45 @@ void solve_bjd_mf(auto assm, disk::dynamic_matrix<T>& eigvecs,
     std::cout << "Eigensolver time: " << tc.toc() << " seconds\n";
 }
 
+#if 0
+template<typename T>
+void solve_spectra(auto assm, disk::dynamic_matrix<T>& eigvecs,
+    disk::dynamic_vector<T>& eigvals)
+{
+    timecounter tc;
+
+    Eigen::PardisoLDLT< Eigen::SparseMatrix<T> > AFF_lu(assm.AFF);
+    Eigen::PardisoLDLT< Eigen::SparseMatrix<T> > BTT_lu(assm.BTT);
+
+    auto apply_A = [&]<int ncols>(
+        const Eigen::Matrix<T, Eigen::Dynamic, ncols>& v) ->
+            Eigen::Matrix<T, Eigen::Dynamic, ncols> {
+        Eigen::Matrix<T, Eigen::Dynamic, ncols> z = assm.AFT*v;
+        return assm.ATT*v - assm.ATF*AFF_lu.solve(z);
+    };
+
+    auto solve_B = [&](const Eigen::Matrix<T, Eigen::Dynamic, ncols>& v) ->
+            Eigen::Matrix<T, Eigen::Dynamic, ncols> {
+        Eigen::Matrix<T, Eigen::Dynamic, ncols> z = assm.AFT*v;
+        return assm.ATT*v - assm.ATF*AFF_lu.solve(z);
+    };
+
+    std::cout << "Block Jacobi-Davidson eigensolver" << std::endl;
+    tc.tic();
+    disk::solvers::bjd_params params;
+    params.block_size = 10;
+    params.max_outer_iters = 200;
+    params.max_inner_iters = 5;
+    params.max_subspace_growth = 10;
+    params.inner_tol = 1e-4;
+    params.verbose = true;
+    disk::solvers::block_jacobi_davidson(params, apply_A,
+        assm.BTT, eigvecs, eigvals);
+    std::cout << "Eigensolver time: " << tc.toc() << " seconds\n";
+}
+#endif
+
+
 template<typename Mesh>
 void
 acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
@@ -301,17 +342,32 @@ acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> eigvecs;
     Eigen::Matrix<T, Eigen::Dynamic, 1> eigvals;
 
-    solve_bjd_mf(assm, eigvecs, eigvals);
+    solve_feast_dense(assm, eigvecs, eigvals);
 
     T pisq = M_PI * M_PI;
 
-    //Eigen::Matrix<T, Eigen::Dynamic, 1> eigvals_ref =
-    //    Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(12);
-    //eigvals_ref << 1,
-    //    pisq+1, pisq+1, 2*pisq+1, 4*pisq+1, 4*pisq+1, 5*pisq+1,
-    //    5*pisq+1, 8*pisq+1, 9*pisq+1, 9*pisq+1, 10*pisq+1, 10*pisq+1
-    //;
+    T a = 1.0;
+    T b = 1.1;
 
+    for (auto& ev : eigvals) {
+        ev -= 1.0;
+        ev /= (M_PI*M_PI);
+    }
+
+    std::cout << "Computed: " << std::setprecision(15) << eigvals.transpose() << std::endl;
+
+    auto refeig = [&](int n, int m) {
+        return ( std::pow(n/a,2) + std::pow(m/b,2));
+    };
+
+    Eigen::Matrix<T, Eigen::Dynamic, 1> eigvals_ref =
+        Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(6);
+    eigvals_ref <<
+        refeig(0,1), refeig(1,0), refeig(1,1), refeig(0,2), refeig(2,0), refeig(1,2)
+    ;
+
+    std::cout << "Reference:" << std::setprecision(15) << eigvals_ref.transpose() << std::endl;
+    std::cout << std::setprecision(15) << (eigvals.segment(0,6) - eigvals_ref).transpose() << std::endl;
 
     silo.add_mesh(msh, "hmesh");
     for (size_t col = 0; col < eigvecs.cols(); col++) {
@@ -342,7 +398,7 @@ run_eigsolver(const Mesh& msh)
 {
     disk::silo_database db;
     db.create("acoustic_eigs.silo");
-    //acoustic_eigs_dg(msh, 2, 10, db);
+    //acoustic_eigs_dg(msh, 0, 10, db);
 
     acoustic_eigs_hho(msh, 2, db);
 }
