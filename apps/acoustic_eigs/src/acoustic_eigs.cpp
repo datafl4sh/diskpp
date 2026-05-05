@@ -39,7 +39,30 @@
 
 #include "diskpp/solvers/eigensolvers.hpp"
 
-#include <Spectra/SymEigsSolver.h>
+
+
+enum class eigsolver_type {
+    feast_full,
+    feast_mf,
+    bjd_mf
+};
+
+enum class mesh_source {
+    internal_tri,
+    internal_quad,
+    internal_hex,
+    external
+};
+
+struct config {
+    eigsolver_type  eigsolver = eigsolver_type::feast_full;
+    size_t          order = 0;
+    size_t          reflevels = 5;
+    mesh_source     source = mesh_source::external;
+    std::string     mesh_filename;
+    std::string     silo_filename;
+};
+
 namespace disk {
 
 template<typename Mesh>
@@ -295,7 +318,7 @@ void solve_spectra(auto assm, disk::dynamic_matrix<T>& eigvecs,
 
 template<typename Mesh>
 void
-acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
+acoustic_eigs_hho(const Mesh& msh, const config& cfg, disk::silo_database& silo)
 {
     std::cout << "HHO eigsolver" << std::endl;
     using namespace disk::basis;
@@ -306,7 +329,7 @@ acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
     using cbasis_type = typename hho_space<Mesh>::cell_basis_type;
     using fbasis_type = typename hho_space<Mesh>::face_basis_type;
 
-    degree_info di(degree);
+    degree_info di(cfg.order);
 
     auto assm = disk::hho::eigenvalue_block_assembler<Mesh, cbasis_type, fbasis_type>(
         msh, di.cell, di.face
@@ -342,37 +365,28 @@ acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
     Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic> eigvecs;
     Eigen::Matrix<T, Eigen::Dynamic, 1> eigvals;
 
-    solve_feast_dense(assm, eigvecs, eigvals);
+    if (cfg.eigsolver == eigsolver_type::feast_full) {
+        solve_feast_dense(assm, eigvecs, eigvals);
+    }
 
-    T pisq = M_PI * M_PI;
+    if (cfg.eigsolver == eigsolver_type::feast_mf) {
+        solve_feast_mf(assm, eigvecs, eigvals);
+    }
 
-    T a = 1.0;
-    T b = 1.1;
+    if (cfg.eigsolver == eigsolver_type::bjd_mf) {
+        solve_bjd_mf(assm, eigvecs, eigvals);
+    }
 
     for (auto& ev : eigvals) {
         ev -= 1.0;
-        ev /= (M_PI*M_PI);
     }
 
     std::cout << "Computed: " << std::setprecision(15) << eigvals.transpose() << std::endl;
 
-    auto refeig = [&](int n, int m) {
-        return ( std::pow(n/a,2) + std::pow(m/b,2));
-    };
-
-    Eigen::Matrix<T, Eigen::Dynamic, 1> eigvals_ref =
-        Eigen::Matrix<T, Eigen::Dynamic, 1>::Zero(6);
-    eigvals_ref <<
-        refeig(0,1), refeig(1,0), refeig(1,1), refeig(0,2), refeig(2,0), refeig(1,2)
-    ;
-
-    std::cout << "Reference:" << std::setprecision(15) << eigvals_ref.transpose() << std::endl;
-    std::cout << std::setprecision(15) << (eigvals.segment(0,6) - eigvals_ref).transpose() << std::endl;
-
     silo.add_mesh(msh, "hmesh");
     for (size_t col = 0; col < eigvecs.cols(); col++) {
         Eigen::Matrix<T, Eigen::Dynamic, 1> eigvec = eigvecs.col(col);
-        std::cout << eigvals(col) << std::endl;
+        //std::cout << eigvals(col) << std::endl;
         std::vector<T> u;
         for (auto& cl : msh) {
             auto ofs = cbasis_type::size_of_degree(di.cell) * offset(msh, cl);
@@ -382,25 +396,18 @@ acoustic_eigs_hho(const Mesh& msh, size_t degree, disk::silo_database& silo)
         std::string vname = "hho_eigfun_" + std::to_string(col);
         silo.add_variable("hmesh", vname, u, disk::zonal_variable_t);
     }
-
-    //auto opt_evs = ::priv::inv_powiter(KTT, assm.BTT, 57.0);
-    //if (opt_evs) {
-    //    auto [vec, val] = *opt_evs;
-    //    std::cout << "with powiter: " << val << std::endl;
-    //}
 }
 
 }
 
 template<typename Mesh>
 void
-run_eigsolver(const Mesh& msh)
+run_eigsolver(const Mesh& msh, const config& cfg)
 {
     disk::silo_database db;
-    db.create("acoustic_eigs.silo");
-    //acoustic_eigs_dg(msh, 0, 10, db);
+    db.create(cfg.silo_filename);
 
-    acoustic_eigs_hho(msh, 1, db);
+    acoustic_eigs_hho(msh, cfg, db);
 }
 
 int main(int argc, char **argv)
@@ -409,61 +416,136 @@ int main(int argc, char **argv)
 
     using T = double;
 
-    /*
-    if (argc < 2) {
-        std::cout << "missing args\n";
-        return 1; 
+    config cfg;
+
+    int opt;
+    while ((opt = getopt(argc, argv, "f:k:m:o:r:")) != -1) {
+        switch (opt) {
+
+        case 'e':
+            if (std::string(optarg) == "feast_full") {
+                cfg.eigsolver = eigsolver_type::feast_full;
+            } else if (std::string(optarg) == "feast_mf") {
+                cfg.eigsolver = eigsolver_type::feast_mf;
+            } else if (std::string(optarg) == "bjd_mf") {
+                cfg.eigsolver = eigsolver_type::bjd_mf;
+            } else {
+                std::cout << "invalid solver type" << std::endl;
+            }
+            break;
+
+        case 'f':
+            cfg.mesh_filename = optarg;
+            break;
+        
+        case 'k':
+            cfg.order = std::stoul(optarg);
+            break;
+
+        case 'm':
+            if (std::string(optarg) == "tri") {
+                cfg.source = mesh_source::internal_tri;
+            } else if (std::string(optarg) == "quad") {
+                cfg.source = mesh_source::internal_quad;
+            } else if (std::string(optarg) == "hex") {
+                cfg.source = mesh_source::internal_tri;
+            } else {
+                std::cout << "invalid mesh type" << std::endl;
+            }
+            break;
+
+        case 'o':
+            cfg.silo_filename = optarg;
+            break;
+
+        case 'r':
+            cfg.reflevels = std::stoul(optarg);
+            break;
+        }
     }
-    
-    std::string mesh_filename = argv[1];
+
+
+    if (cfg.mesh_filename != "") {
  
- 
-    if (std::regex_match(mesh_filename, std::regex(".*\\.geo2s$") ))
-    {
-        std::cout << "Guessed mesh format: GMSH 2D simplicials" << std::endl;
-        using mesh_type = disk::triangular_mesh<T>;
+        if (std::regex_match(cfg.mesh_filename, std::regex(".*\\.geo2s$") ))
+        {
+            std::cout << "Guessed mesh format: GMSH 2D simplicials" << std::endl;
+            using mesh_type = disk::triangular_mesh<T>;
+            mesh_type msh;
+            disk::gmsh_geometry_loader< mesh_type > loader;
+            loader.read_mesh(cfg.mesh_filename);
+            loader.populate_mesh(msh);
+
+            run_eigsolver(msh, cfg);
+            return 0;
+        }
+  
+        if (std::regex_match(cfg.mesh_filename, std::regex(".*\\.geo3s$") ))
+        {
+            std::cout << "Guessed mesh format: GMSH 3D simplicials" << std::endl;
+            using mesh_type = disk::tetrahedral_mesh<T>;
+            mesh_type msh;
+            disk::gmsh_geometry_loader< mesh_type > loader;
+            loader.read_mesh(cfg.mesh_filename);
+            loader.populate_mesh(msh);
+
+            run_eigsolver(msh, cfg);
+            return 0;
+        }
+    }
+
+    if (cfg.source == mesh_source::internal_tri) {
+        using mesh_type = disk::simplicial_mesh<T, 2>;
         mesh_type msh;
-        disk::gmsh_geometry_loader< mesh_type > loader;
-        loader.read_mesh(mesh_filename);
-        loader.populate_mesh(msh);
+        auto mesher = disk::make_simple_mesher(msh);
+        mesher.refine();
 
-        run_eigsolver(msh);
-        return 0;
-    }
- 
- 
-    if (std::regex_match(mesh_filename, std::regex(".*\\.geo3s$") ))
-    {
-        std::cout << "Guessed mesh format: GMSH 3D simplicials" << std::endl;
-        using mesh_type = disk::tetrahedral_mesh<T>;
-        mesh_type msh;
-        disk::gmsh_geometry_loader< mesh_type > loader;
-        loader.read_mesh(mesh_filename);
-        loader.populate_mesh(msh);
-
-        run_eigsolver(msh);
-        return 0;
-    }
-
-    */
-
-    //using mesh_type = disk::cartesian_mesh<T, 2>;
-    using mesh_type = disk::generic_mesh<T, 2>;
-    mesh_type msh;
-    auto mesher = disk::make_fvca5_hex_mesher(msh);
-
-    
-
-    for (int i = 0; i < 6; i++) {
-        mesher.make_level(i);
         msh.transform( [&](const typename mesh_type::point_type& pt) {
             return typename mesh_type::point_type{pt.x(), 1.1*pt.y()};
         } );
-        std::cout << ">>>>>>>> DIAM: " << disk::average_diameter(msh)/std::sqrt(2.0) << std::endl;
+
+        for (int i = 0; i < cfg.reflevels; i++) {
+            mesher.refine();
         
-        run_eigsolver(msh);
+            std::cout << ">>>>>>>> DIAM: " << disk::average_diameter(msh) << std::endl;
+            run_eigsolver(msh, cfg);
+        }
     }
 
+    if (cfg.source == mesh_source::internal_quad) {
+        using mesh_type = disk::cartesian_mesh<T, 2>;
+        mesh_type msh;
+        auto mesher = disk::make_simple_mesher(msh);
+        mesher.refine();
+
+        msh.transform( [&](const typename mesh_type::point_type& pt) {
+            return typename mesh_type::point_type{pt.x(), 1.1*pt.y()};
+        } );
+
+        for (int i = 0; i < cfg.reflevels; i++) {
+            mesher.refine();
+        
+            std::cout << ">>>>>>>> DIAM: " << disk::average_diameter(msh) << std::endl;
+            run_eigsolver(msh, cfg);
+        }
+    }
+
+    if (cfg.source == mesh_source::internal_hex) {
+        using mesh_type = disk::generic_mesh<T, 2>;
+        mesh_type msh;
+        auto mesher = disk::make_fvca5_hex_mesher(msh);
+
+        msh.transform( [&](const typename mesh_type::point_type& pt) {
+            return typename mesh_type::point_type{pt.x(), 1.1*pt.y()};
+        } );
+
+        for (int i = 0; i < cfg.reflevels; i++) {
+            mesher.make_level(i);
+        
+            std::cout << ">>>>>>>> DIAM: " << disk::average_diameter(msh) << std::endl;
+            run_eigsolver(msh, cfg);
+        }
+    }
     
     return 0;
 }
