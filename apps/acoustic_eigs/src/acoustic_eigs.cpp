@@ -400,20 +400,22 @@ run_eigsolver(const Mesh& msh)
     db.create("acoustic_eigs.silo");
     //acoustic_eigs_dg(msh, 0, 10, db);
 
-    acoustic_eigs_hho(msh, 2, db);
+    acoustic_eigs_hho(msh, 1, db);
 }
 
 int main(int argc, char **argv)
 {
     resmon rm("main");
 
+    using T = double;
+
+    /*
     if (argc < 2) {
         std::cout << "missing args\n";
         return 1; 
     }
     
     std::string mesh_filename = argv[1];
-    using T = double;
  
  
     if (std::regex_match(mesh_filename, std::regex(".*\\.geo2s$") ))
@@ -441,6 +443,25 @@ int main(int argc, char **argv)
 
         run_eigsolver(msh);
         return 0;
+    }
+
+    */
+
+    //using mesh_type = disk::cartesian_mesh<T, 2>;
+    using mesh_type = disk::generic_mesh<T, 2>;
+    mesh_type msh;
+    auto mesher = disk::make_fvca5_hex_mesher(msh);
+
+    
+
+    for (int i = 0; i < 6; i++) {
+        mesher.make_level(i);
+        msh.transform( [&](const typename mesh_type::point_type& pt) {
+            return typename mesh_type::point_type{pt.x(), 1.1*pt.y()};
+        } );
+        std::cout << ">>>>>>>> DIAM: " << disk::average_diameter(msh)/std::sqrt(2.0) << std::endl;
+        
+        run_eigsolver(msh);
     }
 
     
