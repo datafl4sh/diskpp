@@ -419,7 +419,7 @@ int main(int argc, char **argv)
     config cfg;
 
     int opt;
-    while ((opt = getopt(argc, argv, "f:k:m:o:r:")) != -1) {
+    while ((opt = getopt(argc, argv, "e:f:k:m:o:r:")) != -1) {
         switch (opt) {
 
         case 'e':
