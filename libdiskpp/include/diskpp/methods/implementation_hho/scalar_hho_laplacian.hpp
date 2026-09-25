@@ -256,6 +256,101 @@ make_scalar_hho_laplacian(const Mesh& msh, const typename Mesh::cell_type& cl, c
     return std::pair(oper, data);
 }
 
+
+
+
+
+template<typename Mesh>
+auto
+make_scalar_hho_laplacian_fulloper(const Mesh& msh, const typename Mesh::cell_type& cl, const hho_degree_info& hdi)
+{
+    using T = typename Mesh::coordinate_type;
+    const size_t DIM = Mesh::dimension;
+
+    const auto rd   = hdi.reconstruction_degree();
+    const auto cd   = hdi.cell_degree();
+    const auto fd   = hdi.face_degree();
+
+    typedef Matrix<T, Dynamic, Dynamic> matrix_type;
+    typedef Matrix<T, Dynamic, 1>       vector_type;
+    typedef Matrix<T, Dynamic, DIM>     gradient_type;
+
+    const auto rb = make_scalar_monomial_basis(msh, cl, rd);
+    const auto cb = make_scalar_monomial_basis(msh, cl, cd);
+
+    const auto rbs = rb.size();
+    const auto cbs = cb.size();
+    const auto fbs = scalar_basis_size(fd, Mesh::dimension-1);
+
+    const auto fcs = faces(msh, cl);
+
+    const auto num_faces_dofs = fbs * fcs.size();
+    const auto num_total_dofs = cbs + num_faces_dofs;
+
+    matrix_type K = matrix_type::Zero(rbs, rbs);
+    matrix_type gr_lhs = matrix_type::Zero(rbs-1, rbs-1);
+    matrix_type gr_rhs = matrix_type::Zero(rbs - 1, num_total_dofs);
+    matrix_type stab1 = matrix_type::Zero(num_total_dofs, num_total_dofs);
+    auto hT = diameter(msh, cl);
+    
+
+    auto qps = disk::integrate(msh, cl, 2*(rd-1));
+    for (auto& qp : qps)
+    {
+        auto r_dphi = rb.eval_gradients(qp.point());
+        K += qp.weight() * r_dphi * r_dphi.transpose();
+    }
+    gr_lhs.block(0, 0, rbs-1, rbs-1) = K.block(1,1,rbs-1,rbs-1);
+    gr_rhs.block(0, 0, rbs-1, cbs) = K.block(1,0,rbs-1,cbs);
+
+    /* Now the faces */
+    size_t offset = cbs;
+    for (size_t i = 0; i < fcs.size(); i++)
+    {
+        const auto& fc  = fcs[i];
+        const auto  n   = normal(msh, cl, fc);
+        const auto  fb  = make_scalar_monomial_basis(msh, fc, fd);
+        const auto  fbs = fb.size();
+
+        matrix_type MF = matrix_type::Zero(fbs, fbs);
+        matrix_type TF = matrix_type::Zero(fbs, cbs);
+
+        auto qps_f = integrate(msh, fc, rd + std::max(cd, fd) );
+        for (auto& qp : qps_f)
+        {
+            gradient_type r_dphi = rb.eval_gradients(qp.point()).block(1, 0, rbs-1, DIM);
+            vector_type f_phi = fb.eval_functions(qp.point());
+            gr_rhs.block(0, offset, rbs - 1, fbs) += qp.weight() * (r_dphi * n) * f_phi.transpose();
+
+            vector_type c_phi = cb.eval_functions(qp.point());
+            gr_rhs.block(0, 0, rbs - 1, cbs) -= qp.weight() * (r_dphi * n) * c_phi.transpose();
+
+            
+            MF += qp.weight() * f_phi * f_phi.transpose();
+            TF += qp.weight() * f_phi * c_phi.transpose();
+        }
+
+        matrix_type S1 = matrix_type::Zero(fbs, num_total_dofs);
+        S1.block(0,0,fbs,cbs) = -MF.ldlt().solve(TF);
+        S1.block(0,offset,fbs,fbs) = matrix_type::Identity(fbs, fbs);
+        stab1 += S1.transpose() * MF * S1;
+
+        offset += fbs;
+    }
+
+    matrix_type oper = gr_lhs.ldlt().solve(gr_rhs);
+    matrix_type data = gr_rhs.transpose() * oper;
+
+    return std::tuple(oper, data, stab1);
+}
+
+
+
+
+
+
+
+
 } //namespace priv
 
 

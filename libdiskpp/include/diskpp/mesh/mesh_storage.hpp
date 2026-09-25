@@ -150,23 +150,6 @@ struct mesh_storage<T, 3, StorageClass>
         std::cout << "Edges: " << edges.size() << std::endl;
         std::cout << "Surfaces: " << surfaces.size() << std::endl;
         std::cout << "Volumes: " << volumes.size() << std::endl;
-
-        std::map<size_t, size_t> count;
-        
-        for (auto& bi : boundary_info)
-            if (bi.is_boundary())
-                count[bi.id()]++;
-
-        for (auto& [bnd, elems] : count)
-            std::cout << bnd << ": " << elems << std::endl;
-
-        count.clear();
-
-        for (auto& di : subdomain_info)
-            count[di.id()]++;
-
-        for (auto& [dom, elems] : count)
-            std::cout << dom << ": " << elems << std::endl;
     }
 };
 
