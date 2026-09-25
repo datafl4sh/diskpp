@@ -83,3 +83,7 @@ install(TARGETS variable_diffusion_hho RUNTIME DESTINATION bin)
 add_executable(poisson_tutorial src/poisson_tutorial.cpp)
 target_link_libraries(poisson_tutorial diskpp::diskpp)
 install(TARGETS poisson_tutorial RUNTIME DESTINATION bin)
+
+add_executable(cr src/cr.cpp)
+target_link_libraries(cr diskpp::diskpp)
+install(TARGETS cr RUNTIME DESTINATION bin)
