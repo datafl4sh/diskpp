@@ -11,12 +11,6 @@
 #include "diskpp/common/timecounter.hpp"
 #include "diskpp/loaders/loader.hpp"
 
-//#define ENABLE_OLD
-
-#ifdef ENABLE_OLD
-#include "diskpp/methods/hho"
-#endif
-
 template<typename Mesh>
 struct source_functor;
 
@@ -95,99 +89,6 @@ auto make_solution_function(const Mesh& msh)
 {
     return solution_functor<Mesh>();
 }
-
-#ifdef ENABLE_OLD
-template<typename Mesh>
-void
-hho_diffusion_solver_old(Mesh& msh, size_t degree)
-{
-    using T = typename Mesh::coordinate_type;
-
-    disk::hho_degree_info hdi(degree);
-
-    auto rhs_fun = make_rhs_function(msh);
-    auto sol_fun = make_solution_function(msh);
-
-    auto assembler = make_diffusion_assembler(msh, hdi);
-
-    using MT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
-    using VT = Eigen::Matrix<T, Eigen::Dynamic, 1>;
-    std::vector<std::pair<MT, VT>> lcs;
-
-    timecounter tc;
-
-    tc.tic();
-    for (auto& cl : msh)
-    {
-        auto cb = make_scalar_monomial_basis(msh, cl, hdi.cell_degree());
-
-        //auto [GR, A] = make_scalar_hho_laplacian(msh, cl, hdi);
-        //auto S = make_scalar_hho_stabilization(msh, cl, GR, hdi);
-
-        auto [GR, A, S] = disk::priv::make_scalar_hho_laplacian_fulloper(msh, cl, hdi);
-
-        disk::dynamic_matrix<T> lhs = A+S;
-        Eigen::Matrix<T, Eigen::Dynamic, 1> rhs = make_rhs(msh, cl, cb, rhs_fun);
-        lcs.push_back({lhs, rhs});
-        auto sc = make_scalar_static_condensation(msh, cl, hdi, lhs, rhs);
-        assembler.assemble(msh, cl, sc.first, sc.second, sol_fun);
-    }
-
-    assembler.finalize();
-    std::cout << " Assembly time: " << tc.toc() << std::endl;
-
-    std::cout << " Unknowns: " << assembler.LHS.rows() << " ";
-    std::cout << " Nonzeros: " << assembler.LHS.nonZeros() << std::endl;
-
-    disk::dynamic_vector<T> sol;
-
-    tc.tic();
-    disk::solvers::sparse_lu(assembler.LHS, assembler.RHS, sol);
-    std::cout << " Solver time: " << tc.toc() << std::endl;
-
-
-    T L2norm = 0.0;
-    T Aerr = 0.0;
-
-    size_t cell_i = 0;
-    for (auto& cl : msh)
-    {
-        auto cb = make_scalar_monomial_basis(msh, cl, hdi.cell_degree());
-
-        auto [lhs, rhs] = lcs[cell_i];
-
-        Eigen::Matrix<T, Eigen::Dynamic, 1> locsol =
-            assembler.take_local_data(msh, cl, sol, sol_fun);
-
-        Eigen::Matrix<T, Eigen::Dynamic, 1> fullsol =
-            make_scalar_static_decondensation(msh, cl, hdi, lhs, rhs, locsol);
-
-        Eigen::Matrix<T, Eigen::Dynamic, 1> realsol =
-            project_function(msh, cl, hdi, sol_fun, 2);
-
-
-        auto qps = disk::integrate(msh, cl, 2*hdi.cell_degree()+2);
-        for (auto& qp : qps)
-        {
-            Eigen::Matrix<T, Eigen::Dynamic, 1> dofs = fullsol.head( cb.size() );
-            auto phi = cb.eval_functions(qp.point());
-            T uh = dofs.dot(phi);
-            T d = sol_fun( qp.point() ) - uh;
-            L2norm += qp.weight() * d * d;
-        }
-
-        Eigen::Matrix<T, Eigen::Dynamic, 1> diff = realsol - fullsol;
-        Aerr += diff.dot(lhs*diff);
-
-        cell_i++;
-    }
-
-    std::cout << sqrt(L2norm) << std::endl;
-    std::cout << sqrt(Aerr) << std::endl;
-    
-}
-#endif
-
 
 template<typename Mesh>
 auto
@@ -412,54 +313,70 @@ hho_diffusion_solver(const Mesh& msh, size_t degree, disk::silo_database& silo)
 
 enum class method {
     hho,
-#ifdef ENABLE_OLD
-    hho_old,
-#endif
     dg,
     invalid
 };
 
 template<typename Mesh>
 void
-run_solver(Mesh& msh, method method_type, size_t degree, size_t levels)
+generate_mesh(Mesh& msh, size_t level)
 {
     auto mesher = disk::make_simple_mesher(msh);
 
-    std::vector<double> dids;
     size_t i = 0;
-    for (i = 0; i < levels; i++) {
+    for (i = 0; i < level; i++) {
         mesher.refine();
     }
 
     disk::renumber_hypercube_boundaries(msh);
     msh.statistics();
-    std::string silo_fn = "poisson_level_" + std::to_string(i) + ".silo";
+}
+
+template<typename T>
+void
+generate_mesh(disk::generic_mesh<T,2>& msh, size_t level)
+{
+    using mesh_type = disk::generic_mesh<T,2>;
+    auto mesher = disk::make_fvca5_hex_mesher(msh);
+    mesher.make_level(level);
+    disk::renumber_hypercube_boundaries(msh);
+    msh.statistics();
+}
+
+template<typename Mesh>
+void
+run_solver(Mesh& msh, method method_type, size_t degree, size_t level)
+{
+    
+
+    std::string silo_fn = "poisson_level_" + std::to_string(level) + ".silo";
     disk::silo_database db;
     db.create(silo_fn);
     db.add_mesh(msh, "mesh");
+
+    std::vector<double> dids;
     for (auto& cl : msh) {
         auto di = msh.domain_info(cl);
         dids.push_back( di.tag() );
     }
     db.add_variable("mesh", "domain_ids", dids, disk::zonal_variable_t);
+
     if (method_type == method::dg) {
         dg_diffusion_solver(msh, degree+1, 10.0, db);
     } 
     if (method_type == method::hho) {
         hho_diffusion_solver(msh, degree, db);
     }
-#ifdef ENABLE_OLD
-    if (method_type == method::hho_old) {
-        hho_diffusion_solver_old(msh, degree);
-    }
-#endif
 }
+
+
 
 enum class elem {
     tri,
     quad,
+    hexg,
     tet,
-    hex,
+    hexh,
     invalid
 };
 
@@ -467,7 +384,7 @@ int main(int argc, char **argv)
 {
     using T = double;
 
-    size_t      levels = 0;
+    size_t      level = 0;
     size_t      degree = 0;
     elem        elem_type = elem::tri;   
     method      method_type = method::hho;
@@ -480,23 +397,20 @@ int main(int argc, char **argv)
     etypes e[] = {
         {   "tri", elem::tri },
         {  "quad", elem::quad },
+        {  "hexg", elem::hexg },
         {   "tet", elem::tet },
-        {   "hex", elem::hex },
+        {  "hexh", elem::hexh },
         { nullptr, elem::invalid }
     };
 
 
     int ch;
-#ifdef ENABLE_OLD
-    while ( (ch = getopt(argc, argv, "r:k:m:do")) != -1 )
-#else
     while ( (ch = getopt(argc, argv, "r:k:m:d")) != -1 )
-#endif
     {
         switch(ch)
         {
             case 'r':
-                levels = std::stoull(optarg);
+                level = std::stoull(optarg);
                 break;
 
             case 'k':
@@ -518,12 +432,6 @@ int main(int argc, char **argv)
                 method_type = method::dg;
                 break;
 
-#ifdef ENABLE_OLD
-            case 'o':
-                method_type = method::hho_old;
-                break;
-#endif
-
             case '?':
             default:
                 std::cout << "Invalid option" << std::endl;
@@ -535,28 +443,40 @@ int main(int argc, char **argv)
         std::cout << "TRIANGLES" << std::endl;
         using mesh_type = disk::simplicial_mesh<T,2>;
         mesh_type msh;
-        run_solver(msh, method_type, degree, levels);
+        generate_mesh(msh, level);
+        run_solver(msh, method_type, degree, level);
     }
 
     if (elem_type == elem::quad) {
         std::cout << "QUADS" << std::endl;
         using mesh_type = disk::cartesian_mesh<T,2>;
         mesh_type msh;
-        run_solver(msh, method_type, degree, levels);
+        generate_mesh(msh, level);
+        run_solver(msh, method_type, degree, level);
+    }
+
+    if (elem_type == elem::hexg) {
+        std::cout << "HEX-DOMINANT" << std::endl;
+        using mesh_type = disk::generic_mesh<T,2>;
+        mesh_type msh;
+        generate_mesh(msh, level);
+        run_solver(msh, method_type, degree, level);
     }
 
     if (elem_type == elem::tet) {
         std::cout << "TETRAS" << std::endl;
         using mesh_type = disk::simplicial_mesh<T,3>;
         mesh_type msh;
-        run_solver(msh, method_type, degree, levels);
+        generate_mesh(msh, level);
+        run_solver(msh, method_type, degree, level);
     }
 
-    if (elem_type == elem::hex) {
+    if (elem_type == elem::hexh) {
         std::cout << "CUBES" << std::endl;
         using mesh_type = disk::cartesian_mesh<T,3>;
         mesh_type msh;
-        run_solver(msh, method_type, degree, levels);
+        generate_mesh(msh, level);
+        run_solver(msh, method_type, degree, level);
     }
 
     return 0;
