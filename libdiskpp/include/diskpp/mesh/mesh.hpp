@@ -79,6 +79,7 @@
 #include <iterator>
 #include <set>
 #include <optional>
+#include <random>
 
 #include "ident.hpp"
 
@@ -649,6 +650,12 @@ public:
     }
 
     auto point_at(size_t point_num) const {
+        auto bs = this->backend_storage();
+        assert(point_num < bs->points.size());
+        return bs->points[point_num];
+    }
+
+    auto& point_at(size_t point_num) {
         auto bs = this->backend_storage();
         assert(point_num < bs->points.size());
         return bs->points[point_num];
@@ -1226,6 +1233,40 @@ mesh_aspect(const MeshType& msh, const std::string& filename)
     }
 
     myfile.close();
+}
+
+
+template<typename Mesh>
+void
+shake(Mesh& msh, typename Mesh::coordinate_type delta)
+{
+    using T = typename Mesh::coordinate_type;
+    using point_type = typename Mesh::point_type;
+
+    std::vector<int> bnodes(msh.points_size(), 0); 
+    for (auto& fc : faces(msh)) {
+        auto bi = msh.boundary_info(fc);
+        if (bi.is_boundary()) {
+            auto ptids = fc.point_ids();
+            for (auto& ptid : ptids) {
+                bnodes[ptid] = 1;
+            }
+        }
+    }
+
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<T> dist(-delta, delta);
+
+    for (size_t i = 0; i < msh.points_size(); i++) {
+        auto& pt = msh.point_at(i);
+        if (not bnodes[i]) {
+            for (auto c = 0; c < Mesh::dimension; c++) {
+                pt[c] += dist(gen);
+            }
+        }
+    }
 }
 
 } // namespace disk

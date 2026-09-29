@@ -180,7 +180,15 @@ void dump_sparse_matrix_with_header(Eigen::SparseMatrix<T>& M, const std::string
 
 } //namespace disk
 
-
+template<typename T>
+auto cond(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& A, int skip = 0)
+{
+    using MT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
+    Eigen::JacobiSVD<MT> svd(A);
+    auto lmax = svd.singularValues()(0);
+    auto lmin = svd.singularValues()(svd.singularValues().size()-(1+skip));
+    return lmax/lmin; 
+}
 
 #ifdef HAVE_HDF5
 
