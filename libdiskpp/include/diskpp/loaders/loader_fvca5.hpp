@@ -56,6 +56,12 @@ class fvca5_mesh_loader
     static_assert(N == 2, "FVCA5 is a 2D-only mesh format");
 };
 
+enum class parser_state {
+    success,
+    failure,
+    success_and_stop
+};
+
 template<typename T>
 class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
 {
@@ -112,7 +118,7 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
         return ifs.rdstate() & std::ifstream::failbit;
     }
 
-    bool
+    parser_state
     fvca5_parse_vertices()
     {
         std::istringstream iss;
@@ -124,7 +130,7 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
         {
             std::cout << "Line " << current_line << ": Error while parsing ";
             std::cout << "'vertices' block (number of vertices)" << std::endl;
-            return false;
+            return parser_state::failure;
         }
 
         if (this->verbose())
@@ -139,16 +145,16 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
             {
                 std::cout << "Line " << current_line << ": Error while parsing ";
                 std::cout << "'vertices' block (vertex " << i << ")" << std::endl;
-                return false;
+                return parser_state::failure;
             }
 
             m_points.push_back(point_type{x, y});
         }
 
-        return true;
+        return parser_state::success;
     }
 
-    bool
+    parser_state
     fvca5_parse_polygons(size_t polynum)
     {
         std::istringstream iss;
@@ -162,7 +168,7 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
             std::cout << "Line " << current_line << ": Error while parsing ";
             std::cout << "'" << polynum << "-angles' block (number of polygons)";
             std::cout << std::endl;
-            return false;
+            return parser_state::failure;
         }
 
         if (this->verbose())
@@ -186,7 +192,7 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
                 std::cout << "Line " << current_line << ": Error while parsing '";
                 std::cout << polynum << "-angles' block (polygon ";
                 std::cout << i << ")" << std::endl;
-                return false;
+                return parser_state::failure;
             }
 
             // JMLC extension
@@ -200,10 +206,70 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
             m_polys.push_back(p);
         }
 
-        return true;
+        return parser_state::success;
     }
 
-    bool
+    parser_state
+    fvca5_parse_polygons()
+    {
+        std::istringstream iss;
+        get_next_line(iss);
+
+        size_t num_polygons;
+
+        iss >> num_polygons;
+        if (failure(iss))
+        {
+            std::cout << "Line " << current_line << ": Error while parsing ";
+            std::cout << "'cell' block (number of polygons)";
+            std::cout << std::endl;
+            return parser_state::failure;
+        }
+
+        if (this->verbose()) {
+            std::cout << "Reading " << num_polygons << " cells" << std::endl;
+        }
+
+        for (size_t i = 0; i < num_polygons; i++)
+        {
+            get_next_line(iss);
+
+            fvca5_poly p;
+
+            ident_raw_t nvtx;
+            iss >> nvtx;
+
+            for (size_t j = 0; j < nvtx; j++)
+            {
+                ident_raw_t val;
+                iss >> val;
+                p.nodes.push_back(val - 1);
+            }
+
+            if (failure(iss))
+            {
+                std::cout << "Line " << current_line << ": Error while parsing '";
+                std::cout << "cells' block (polygon ";
+                std::cout << i << ")" << std::endl;
+                return parser_state::failure;
+            }
+
+            m_polys.push_back(p);
+
+            for (size_t i = 0; i < p.nodes.size(); i++) {
+                auto node1 = typename node_type::id_type(p.nodes[i]);
+                auto node2 = typename node_type::id_type(p.nodes[(i+1)%p.nodes.size()]);
+                if (node1 > node2) {
+                    std::swap(node1, node2);
+                }
+                m_edges.push_back({node1, node2, 0, 0});
+            }
+        }
+
+        return parser_state::success;
+    }
+
+    parser_state
     fvca5_parse_boundary_edges()
     {
         std::istringstream iss;
@@ -217,7 +283,7 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
             std::cout << "Line " << current_line << ": Error while parsing ";
             std::cout << "'edges of the boundary' block (number of edges)";
             std::cout << std::endl;
-            return false;
+            return parser_state::failure;
         }
 
         if (this->verbose())
@@ -236,14 +302,14 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
                 std::cout << "Line " << current_line << ": Error while parsing ";
                 std::cout << "'edges of the boundary' block (edge " << i << ")";
                 std::cout << std::endl;
-                return false;
+                return parser_state::failure;
             }
 
             if (node_a < 1 or node_b < 1)
             {
                 std::cout << "Line " << current_line << ": FVCA5 format ";
                 std::cout << "expects 1-based indices" << std::endl;
-                return false;
+                return parser_state::failure;
             }
 
             node_a -= 1;
@@ -253,7 +319,7 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
             {
                 std::cout << "Line " << current_line << ": Edge starting and ";
                 std::cout << "finishing on the same node" << std::endl;
-                return false;
+                return parser_state::failure;
             }
 
             if (node_a > node_b)
@@ -262,10 +328,10 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
             m_boundary_edges.push_back({node_a, node_b});
         }
 
-        return true;
+        return parser_state::success;
     }
 
-    bool
+    parser_state
     fvca5_parse_all_edges()
     {
         std::istringstream iss;
@@ -279,7 +345,7 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
             std::cout << "Line " << current_line << ": Error while parsing ";
             std::cout << "'all edges' block (number of edges)";
             std::cout << std::endl;
-            return false;
+            return parser_state::failure;
         }
 
         if (this->verbose())
@@ -296,14 +362,14 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
                 std::cout << "Line " << current_line << ": Error while parsing ";
                 std::cout << "'all edges' block (edge " << i << ")";
                 std::cout << std::endl;
-                return false;
+                return parser_state::failure;
             }
 
             if (node_a < 1 or node_b < 1)
             {
                 std::cout << "Line " << current_line << ": FVCA5 format ";
                 std::cout << "expects 1-based indices" << std::endl;
-                return false;
+                return parser_state::failure;
             }
 
             node_a -= 1;
@@ -313,7 +379,7 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
             {
                 std::cout << "Line " << current_line << ": Edge starting and ";
                 std::cout << "finishing on the same node" << std::endl;
-                return false;
+                return parser_state::failure;
             }
 
             if (node_a > node_b)
@@ -336,20 +402,27 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
             m_edges.push_back({node_a, node_b, neigh_a, neigh_b});
         }
 
-        return true;
+        return parser_state::success;
     }
 
-    bool
+    parser_state
     fvca5_parse_block()
     {
         std::string line;
         get_next_line(line);
 
         if (std::regex_match(line, std::regex("^\\s*$")))
-            return true;
+            return parser_state::success;
 
-        if (std::regex_match(line, std::regex("^\\s*vertices\\s*$")))
+        static const std::regex vertices_regex(
+            R"(^\s*vertices\s*$)", std::regex_constants::icase);
+        if (std::regex_match(line, vertices_regex))
             return fvca5_parse_vertices();
+
+        static const std::regex cells_regex(
+            R"(^\s*cells\s*$)", std::regex_constants::icase);
+        if (std::regex_match(line, cells_regex))
+            return fvca5_parse_polygons();
 
         if (std::regex_match(line, std::regex("^\\s*triangles\\s*$")))
             return fvca5_parse_polygons(3);
@@ -379,9 +452,14 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
         if (std::regex_match(line, std::regex("^\\s*all\\s+edges\\s*$")))
             return fvca5_parse_all_edges();
 
+        static const std::regex centers_regex(
+            R"(^\s*centers\s*$)", std::regex_constants::icase);
+        if (std::regex_match(line, centers_regex))
+            return parser_state::success_and_stop;
+
         std::cout << "Line " << current_line << ": Unknown block '";
         std::cout << line << "'" << std::endl;
-        return false;
+        return parser_state::failure;
     }
 
     bool
@@ -396,15 +474,19 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
 
         while (!ifs.eof())
         {
-            bool success = fvca5_parse_block();
+            parser_state state = fvca5_parse_block();
 
-            if (not success)
+            if (state == parser_state::failure)
             {
                 m_points.clear();
                 m_polys.clear();
                 m_boundary_edges.clear();
                 m_edges.clear();
                 return false;
+            }
+
+            if (state == parser_state::success_and_stop) {
+                break;
             }
         }
 
@@ -460,9 +542,10 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
         }
         /* Sort them */
         std::sort(edges.begin(), edges.end());
+        edges.erase(std::unique(edges.begin(), edges.end()), edges.end());
 
         /* Detect which ones are boundary edges */
-        storage->boundary_info.resize(m_edges.size());
+        storage->boundary_info.resize(edges.size());
         for (size_t i = 0; i < m_boundary_edges.size(); i++)
         {
             assert(m_boundary_edges[i][0] < m_boundary_edges[i][1]);
@@ -509,10 +592,26 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
 
                 surface_edges.push_back(edge_id.second);
             }
+
+            if (surface_edges.size() == 0) {
+                for (size_t i = 0; i < p.nodes.size(); i++) {
+                    auto node1 = typename node_type::id_type(p.nodes[i]);
+                    auto node2 = typename node_type::id_type(p.nodes[(i+1)%p.nodes.size()]);
+                    edge_type edge(node1, node2);
+                    auto      edge_id = find_element_id(storage->edges.begin(), storage->edges.end(), edge);
+                    if (!edge_id.first)
+                    {
+                        std::cout << "Bad bug at " << __FILE__ << "(" << __LINE__ << ")" << std::endl;
+                        return false;
+                    }
+                    surface_edges.push_back(edge_id.second);
+                }
+            }
+
             auto surface = surface_type(surface_edges);
             surface.set_point_ids(p.nodes.begin(), p.nodes.end()); /* XXX: crap */
             surfaces.push_back(std::make_pair(surface, p.domain_id));
-            // storage->subdomain_info.push_back( subdomain_descriptor(p.domain_id) );
+            //storage->subdomain_info.push_back( subdomain_descriptor(p.domain_id) );
         }
 
         auto comp = [](const sd_pair& a, const sd_pair& b) -> bool { return a.first < b.first; };
@@ -535,7 +634,7 @@ class fvca5_mesh_loader<T, 2> : public mesh_loader<generic_mesh<T, 2>>
          */
 
         std::vector<boundary_descriptor> bds_save   = storage->boundary_info;
-        auto                             renumbered = renumber_hypercube_boundaries(msh);
+        auto renumbered = renumber_hypercube_boundaries(msh);
         if (not renumbered)
         {
             std::cout << "Warning: unable to renumber FVCA5 mesh boundaries, ";

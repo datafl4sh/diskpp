@@ -388,6 +388,7 @@ int main(int argc, char **argv)
     size_t      degree = 0;
     elem        elem_type = elem::tri;   
     method      method_type = method::hho;
+    const char *mesh_filename = nullptr;
 
     struct etypes {
         const char *name;
@@ -405,7 +406,7 @@ int main(int argc, char **argv)
 
 
     int ch;
-    while ( (ch = getopt(argc, argv, "r:k:m:d")) != -1 )
+    while ( (ch = getopt(argc, argv, "r:k:m:M:d")) != -1 )
     {
         switch(ch)
         {
@@ -432,11 +433,24 @@ int main(int argc, char **argv)
                 method_type = method::dg;
                 break;
 
+            case 'M':
+                mesh_filename = optarg;
+                break;
+
             case '?':
             default:
                 std::cout << "Invalid option" << std::endl;
                 return 1;
         }
+    }
+
+    if (mesh_filename) {
+        std::cout << "EXTERNAL TYP1 FILE" << std::endl;
+        using mesh_type = disk::generic_mesh<T,2>;
+        mesh_type msh;
+        disk::load_mesh_fvca5_2d(mesh_filename, msh);
+        run_solver(msh, method_type, degree, level);
+        elem_type = elem::invalid;
     }
 
     if (elem_type == elem::tri) {
