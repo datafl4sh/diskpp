@@ -449,6 +449,7 @@ int main(int argc, char **argv)
         using mesh_type = disk::generic_mesh<T,2>;
         mesh_type msh;
         disk::load_mesh_fvca5_2d(mesh_filename, msh);
+        msh.statistics();
         run_solver(msh, method_type, degree, level);
         elem_type = elem::invalid;
     }
