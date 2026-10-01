@@ -13,16 +13,6 @@
 using namespace sgr;
 using namespace disk::basis;
 
-template<typename T>
-auto cond(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& A)
-{
-    using MT = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
-    Eigen::JacobiSVD<MT> svd(A);
-    auto lmax = svd.singularValues()(0);
-    auto lmin = svd.singularValues()(svd.singularValues().size()-1);
-    return lmax/lmin; 
-}
-
 template<typename Mesh>
 void test_conditioning(const Mesh& msh, double scalefactor,
     const typename Mesh::point_type& tp, rescaling_strategy rs)

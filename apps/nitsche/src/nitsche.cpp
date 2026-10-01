@@ -418,7 +418,7 @@ nitsche_hho_solver(const Mesh& msh, size_t degree, const std::vector<bc>& bcs)
         disk::dynamic_matrix<scalar_type> mass = disk::make_mass_matrix(msh, cl, cb);
 
         if (compute_cond) {
-            conditioning.push_back( cond(lhs) );
+            conditioning.push_back( cond(lhs, 1) );
         }
 
         L2error += diff.dot(mass*diff);

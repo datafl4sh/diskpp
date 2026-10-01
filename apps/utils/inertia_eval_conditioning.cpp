@@ -22,14 +22,6 @@
 using namespace disk;
 using namespace disk::basis;
 
-template<typename T>
-T cond(const Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>& m)
-{
-    using matrix_type = Eigen::Matrix<T, Eigen::Dynamic, Eigen::Dynamic>;
-    Eigen::JacobiSVD<matrix_type> svd(m);
-    return svd.singularValues()(0) / svd.singularValues()(svd.singularValues().size()-1);
-}
-
 template<template<typename, size_t, typename> class Mesh, typename T, size_t DIM, typename Storage>
 void
 eval_conditioning(const Mesh<T, DIM, Storage>& msh, size_t degree)
