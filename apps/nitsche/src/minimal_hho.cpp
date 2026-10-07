@@ -138,8 +138,6 @@ auto hho_minimal_reconstruction(const Mesh& msh,
         auto cphi = rb.eval_functions(qp.point()); 
         auto dphi = rb.eval_gradients(qp.point());
         K += (qp.weight() * dphi) * dphi.transpose();
-        //RHS.block(0, 0, 1, rbs) += qp.weight() * cphi.transpose();
-        //LHS.block(0, 0, 1, rbs) += qp.weight() * cphi.transpose();
     }
 
     LHS.block(0,0,rbs,rbs) += K.block(0,0,rbs,rbs);
@@ -162,10 +160,8 @@ auto hho_minimal_reconstruction(const Mesh& msh,
                     auto cphi = rb.eval_functions(qp.point());
                     auto fphi = fb.eval_functions(qp.point());
                     auto dphi = rb.eval_gradients(qp.point());
-                    disk::dynamic_vector<scalar_type> dphi_dot_n =
-                        (dphi*n);//.tail(rbs-1);
-                    RHS.block(0,   0, rbs, rbs) -= qp.weight() * dphi_dot_n * cphi.transpose();
-                    RHS.block(0, ofs, rbs, fbs) += qp.weight() * dphi_dot_n * fphi.transpose();
+                    RHS.block(0,   0, rbs, rbs) -= qp.weight() * (dphi*n) * cphi.transpose();
+                    RHS.block(0, ofs, rbs, fbs) += qp.weight() * (dphi*n) * fphi.transpose();
                 }
             }
 
@@ -186,10 +182,8 @@ auto hho_minimal_reconstruction(const Mesh& msh,
                 auto cphi = rb.eval_functions(qp.point());
                 auto fphi = fb.eval_functions(qp.point());
                 auto dphi = rb.eval_gradients(qp.point());
-                disk::dynamic_vector<scalar_type> dphi_dot_n =
-                    (dphi*n);//.tail(rbs-1);
-                RHS.block(0,   0, rbs, rbs) -= qp.weight() * dphi_dot_n * cphi.transpose();
-                RHS.block(0, ofs, rbs, fbs) += qp.weight() * dphi_dot_n * fphi.transpose();
+                RHS.block(0,   0, rbs, rbs) -= qp.weight() * (dphi*n) * cphi.transpose();
+                RHS.block(0, ofs, rbs, fbs) += qp.weight() * (dphi*n) * fphi.transpose();
             }
         }
     }
@@ -387,8 +381,7 @@ minimal_hho_solver(const Mesh& msh, size_t degree, const std::vector<bc>& bcs)
     auto gR = [](const typename Mesh::point_type& pt) {
         auto x = pt.x();
         auto y = pt.y();
-        auto alpha = 1.0;
-        return (-M_PI*std::exp(x) - 1.0 + alpha*x*x);
+        return (-M_PI*std::exp(x) - 1.0 + x*x);
     };
 
 
@@ -484,10 +477,12 @@ minimal_hho_solver(const Mesh& msh, size_t degree, const std::vector<bc>& bcs)
     
     std::vector<scalar_type> u_data;
     std::vector<scalar_type> uex_data;
+    std::vector<scalar_type> ae_data;
     std::vector<scalar_type> conditioning;
     auto solfun = make_solution_function(msh);
 
     scalar_type L2error = 0.0;
+    scalar_type Aerror = 0.0;
     auto u_sol = make_solution_function(msh);
     tc.tic();
     size_t cell_i = 0;
@@ -505,15 +500,43 @@ minimal_hho_solver(const Mesh& msh, size_t degree, const std::vector<bc>& bcs)
             disk::project_function(msh, cl, degree+1, u);
 
         disk::dynamic_vector<scalar_type> diff = ana_sol - locsol.head(cbs);
+        disk::dynamic_vector<scalar_type> Iu = disk::project_function(msh, cl, disk::hho_degree_info(di.cell, di.face), u);
+
+        auto fcs = faces(msh, cl);
+        auto ofs = cbs;
+        for (auto& fc : fcs) {
+            auto bi = msh.boundary_info(fc);
+            if (bi.is_boundary()){
+                auto boundary_id = bi.id();
+                if ( bcs[offset(msh, fc)] == bc::dirichlet ) {
+                    auto fb = disk::make_scalar_monomial_basis(msh, fc, degree);
+                    auto fqps = disk::integrate(msh, fc, 2*degree);
+                    disk::dynamic_matrix<scalar_type> M =
+                        disk::dynamic_matrix<scalar_type>::Zero(fb.size(), fb.size());
+                    disk::dynamic_vector<scalar_type> f_gD =
+                        disk::dynamic_vector<scalar_type>::Zero(fb.size());
+                    for (const auto& qp : fqps) {
+                        auto phi = fb.eval_functions(qp.point());
+                        M += qp.weight() * phi * phi.transpose();
+                        f_gD += qp.weight() * gD(qp.point()) * phi;
+                    }
+                    locsol.segment(ofs, fbs) += M.ldlt().solve(f_gD);
+                }
+            }
+            ofs += fbs;
+        }
 
         auto cb = disk::make_scalar_monomial_basis(msh, cl, degree+1);
         disk::dynamic_matrix<scalar_type> mass = disk::make_mass_matrix(msh, cl, cb);
 
         if (compute_cond) {
-            conditioning.push_back( cond(lhs) );
+            conditioning.push_back( cond(lhs, 1) );
         }
 
         L2error += diff.dot(mass*diff);
+        auto ae = (Iu - locsol).dot(lhs*(Iu - locsol));
+        ae_data.push_back(ae);
+        Aerror += ae;
     }
     //std::cout << " Postpro time: " << tc.toc() << std::endl;
     //std::cout << " L2-norm error: " << std::sqrt(L2error) << std::endl;
@@ -523,11 +546,12 @@ minimal_hho_solver(const Mesh& msh, size_t degree, const std::vector<bc>& bcs)
     silo.add_mesh(msh, "mesh");
     silo.add_variable("mesh", "u", u_data, disk::zonal_variable_t);
     silo.add_variable("mesh", "u_ex", uex_data, disk::zonal_variable_t);
+    silo.add_variable("mesh", "a_err", ae_data, disk::zonal_variable_t);
     if (compute_cond) {
         silo.add_variable("mesh", "cond", conditioning, disk::zonal_variable_t);
     }
 
-    return std::sqrt(L2error);
+    return std::pair{std::sqrt(L2error), std::sqrt(Aerror)};
 }
 
 int main(void)
@@ -541,7 +565,8 @@ int main(void)
         auto mesher = make_simple_mesher(msh);
         disk::renumber_hypercube_boundaries(msh);
         
-        auto prev_err = 0.0;
+        auto prev_L2err = 0.0;
+        auto prev_Aerr = 0.0;
         auto prev_h = 0.0;
 
         std::cout << "Minimal-HHO(k+1, k), k = " << k << std::endl;
@@ -552,18 +577,20 @@ int main(void)
             set_boundary(msh, bcs, bc::neumann, 1);
             set_boundary(msh, bcs, bc::dirichlet, 2);
             set_boundary(msh, bcs, bc::dirichlet, 3);
-            auto err = minimal_hho_solver(msh, k, bcs);
+            auto [L2err, Aerr] = minimal_hho_solver(msh, k, bcs);
             auto h = disk::average_diameter(msh);
 
             if (i == 0) {
-                std::cout << "  h = " << h << ", err = " << err << std::endl;
+                std::cout << "  h = " << h << ", L2err = " << L2err << ", Aerr = " << Aerr << std::endl;
             }
             else {
-                auto rate = std::log(prev_err/err)/std::log(prev_h/h);
-                std::cout << "  h = " << h << ", err = " << err << ", rate = " << rate << std::endl;
+                auto L2rate = std::log(prev_L2err/L2err)/std::log(prev_h/h);
+                auto Arate = std::log(prev_Aerr/Aerr)/std::log(prev_h/h);
+                std::cout << "  h = " << h << ", L2err = " << L2err << ", L2 rate = " << L2rate << ", Aerr = " << Aerr  << ", A rate = " << Arate << std::endl;
             }
             prev_h = h;
-            prev_err = err;
+            prev_L2err = L2err;
+            prev_Aerr = Aerr;
         }
     }
 
