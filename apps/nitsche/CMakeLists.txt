@@ -14,6 +14,10 @@ add_executable(minimal_hho src/minimal_hho.cpp)
 target_link_libraries(minimal_hho diskpp::diskpp)
 install(TARGETS minimal_hho RUNTIME DESTINATION bin)
 
+add_executable(minimal_hho_solver src/minimal_hho_solver.cpp)
+target_link_libraries(minimal_hho_solver diskpp::diskpp)
+install(TARGETS minimal_hho RUNTIME DESTINATION bin)
+
 add_executable(linelast src/linelast.cpp)
 target_link_libraries(linelast diskpp::diskpp)
 install(TARGETS linelast RUNTIME DESTINATION bin)
