@@ -38,7 +38,7 @@ struct poisson_data<Mesh>
     }
 
     T neumann(const point_type& pt, size_t tag) {
-        return 0.0;
+        return -600.0;
     }
 
     T robin(const point_type&, size_t tag) {
@@ -98,7 +98,7 @@ solver(solver_state<Mesh>& state)
         auto S = hho_minimal_stabilization(state.msh, cl,
             state.degree, state.bcs);
         
-        mat lhs = 237.0*A+S;
+        mat lhs = 237.0*(A+S);
         vec rhs = vec::Zero( lhs.rows() );
 
         vec gD_rhs = vec::Zero(A.rows());
@@ -136,7 +136,7 @@ solver(solver_state<Mesh>& state)
                         auto phi = cb.eval_functions(qp.point());
                         //auto gN_val = gN(qp.point());
                         /* (gN, w)_F */
-                        rhs.head(cbs) += qp.weight() * (-100.0) * phi;
+                        rhs.head(cbs) += qp.weight() * state.data.neumann(qp.point(), boundary_id) * phi;
                     }
                 }
             }
@@ -164,15 +164,6 @@ solver(solver_state<Mesh>& state)
         
         const auto& [lhs, rhs] = lcs[cell_i++];
         auto locsolF = assm.take_local_solution(state.msh, cl, sol);
-        
-        auto fcs = faces(state.msh, cl);
-        auto ofs = 0;
-        for (auto& fc : fcs) {
-            auto gofs = offset(state.msh, fc);
-            //locsolF.segment(ofs, fbs) +=
-            //    global_dirichlet_data.segment(gofs, fbs);
-            ofs += fbs;
-        }
         
         disk::dynamic_vector<scalar_type> locsol =
             disk::static_decondensation(lhs, rhs, locsolF);
