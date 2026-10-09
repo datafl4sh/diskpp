@@ -921,6 +921,7 @@ struct temp_volume
 
 } // namespace priv
 
+#define GMSH_SHAPE_TETRAHEDRON 4
 #define GMSH_SHAPE_PRISM 6
 
 template<typename T>
@@ -977,6 +978,66 @@ class gmsh_geometry_loader<generic_mesh<T,3>> : public mesh_loader<generic_mesh<
             auto point_id = disk::point_identifier<3>( i );
             auto node = node_type( { point_id } );
             nodes.push_back(node);
+        }
+    }
+
+    void gmsh_get_tetras(size_t subdom_id, size_t tag, int elemType)
+    {
+        std::vector<size_t> elemTags;
+        std::vector<size_t> elemNodeTags;
+        gmsh::model::mesh::getElementsByType(elemType, elemTags, elemNodeTags, tag);
+        auto nodesPerElem = elemNodeTags.size()/elemTags.size();
+        assert( elemTags.size() * nodesPerElem == elemNodeTags.size() );
+    
+        for (size_t i = 0; i < elemTags.size(); i++)
+        {
+            auto base = nodesPerElem * i;
+
+            auto node0_tag = elemNodeTags[base + 0];
+            assert(node0_tag < node_tag2ofs.size());
+            auto node0_ofs = node_tag2ofs[node0_tag];
+            assert(node0_ofs != INVALID_OFS);
+
+            auto node1_tag = elemNodeTags[base + 1];
+            assert(node1_tag < node_tag2ofs.size());
+            auto node1_ofs = node_tag2ofs[node1_tag];
+            assert(node1_ofs != INVALID_OFS);
+
+            auto node2_tag = elemNodeTags[base + 2];
+            assert(node2_tag < node_tag2ofs.size());
+            auto node2_ofs = node_tag2ofs[node2_tag];
+            assert(node2_ofs != INVALID_OFS);
+
+            auto node3_tag = elemNodeTags[base + 3];
+            assert(node3_tag < node_tag2ofs.size());
+            auto node3_ofs = node_tag2ofs[node3_tag];
+            assert(node3_ofs != INVALID_OFS);
+
+
+            typename node_type::id_type n0(node0_ofs);
+            typename node_type::id_type n1(node1_ofs);
+            typename node_type::id_type n2(node2_ofs);
+            typename node_type::id_type n3(node3_ofs);
+
+            edges.push_back( edge_type( { n0, n1 } ) );
+            edges.push_back( edge_type( { n0, n2 } ) );
+            edges.push_back( edge_type( { n0, n3 } ) );
+            edges.push_back( edge_type( { n1, n2 } ) );
+            edges.push_back( edge_type( { n1, n3 } ) );
+            edges.push_back( edge_type( { n2, n3 } ) );
+
+            tmp_surfaces.push_back( priv::temp_face({n0, n2, n1}) );
+            tmp_surfaces.push_back( priv::temp_face({n0, n1, n3}) );
+            tmp_surfaces.push_back( priv::temp_face({n0, n3, n2}) );
+            tmp_surfaces.push_back( priv::temp_face({n1, n2, n3}) );
+
+            subdomain_descriptor di(subdom_id, tag);
+            auto tv = priv::temp_volume({n0, n1, n2, n3}, di);
+            tv.temp_faces.push_back( priv::temp_face({n0, n2, n1}) );
+            tv.temp_faces.push_back( priv::temp_face({n0, n1, n3}) );
+            tv.temp_faces.push_back( priv::temp_face({n0, n3, n2}) );
+            tv.temp_faces.push_back( priv::temp_face({n1, n2, n3}) );
+            tmp_volumes.push_back(tv);
         }
     }
 
@@ -1039,17 +1100,17 @@ class gmsh_geometry_loader<generic_mesh<T,3>> : public mesh_loader<generic_mesh<
             edges.push_back( edge_type( { n3, n5 } ) );
             edges.push_back( edge_type( { n4, n5 } ) );
 
-            tmp_surfaces.push_back( priv::temp_face({n0, n1, n2}) );
+            tmp_surfaces.push_back( priv::temp_face({n0, n2, n1}) );
             tmp_surfaces.push_back( priv::temp_face({n0, n1, n4, n3}) );
-            tmp_surfaces.push_back( priv::temp_face({n0, n2, n5, n3}) );
+            tmp_surfaces.push_back( priv::temp_face({n0, n3, n5, n2}) );
             tmp_surfaces.push_back( priv::temp_face({n1, n2, n5, n4}) );
             tmp_surfaces.push_back( priv::temp_face({n3, n4, n5}) );
 
             subdomain_descriptor di(subdom_id, tag);
             auto tv = priv::temp_volume({n0, n1, n2, n3, n4, n5}, di);
-            tv.temp_faces.push_back( priv::temp_face({n0, n1, n2}) );
+            tv.temp_faces.push_back( priv::temp_face({n0, n2, n1}) );
             tv.temp_faces.push_back( priv::temp_face({n0, n1, n4, n3}) );
-            tv.temp_faces.push_back( priv::temp_face({n0, n2, n5, n3}) );
+            tv.temp_faces.push_back( priv::temp_face({n0, n3, n5, n2}) );
             tv.temp_faces.push_back( priv::temp_face({n1, n2, n5, n4}) );
             tv.temp_faces.push_back( priv::temp_face({n3, n4, n5}) );
             tmp_volumes.push_back(tv);
@@ -1073,6 +1134,12 @@ class gmsh_geometry_loader<generic_mesh<T,3>> : public mesh_loader<generic_mesh<
                         if (this->verbose())
                             std::cout << "Entity " << tag << ": prisms" << std::endl;
                         gmsh_get_prisms(subdom_id, tag, elemType);
+                        break;
+
+                    case GMSH_SHAPE_TETRAHEDRON:
+                        if (this->verbose())
+                            std::cout << "Entity " << tag << ": tetras" << std::endl;
+                        gmsh_get_tetras(subdom_id, tag, elemType);
                         break;
 
                     default:
@@ -1247,7 +1314,7 @@ class gmsh_geometry_loader<generic_mesh<T,3>> : public mesh_loader<generic_mesh<
                     if ( (itor == surf_map_table.end()) or not eq(*itor, fn) )
                     {
                         std::cout << node0_ofs << " " << node1_ofs << " " << node2_ofs << std::endl;
-                        throw std::logic_error("Face not found");
+                        throw std::logic_error("DBF: triangle not found");
                     }
 
                     auto ofs = (*itor).second;
@@ -1285,8 +1352,11 @@ class gmsh_geometry_loader<generic_mesh<T,3>> : public mesh_loader<generic_mesh<
 
                     auto itor = std::lower_bound(surf_map_table.begin(), surf_map_table.end(), fn, comp);
                     if ( (itor == surf_map_table.end()) or not eq(*itor, fn) )
-                        throw std::logic_error("Face not found");
-
+                    {
+                        std::cout << node0_ofs << " " << node1_ofs << " ";
+                        std::cout << node2_ofs << " " << node3_ofs << std::endl;
+                        throw std::logic_error("DBF: quad not found");
+                    }
                     auto ofs = (*itor).second;
                     boundary_info.at(ofs) = bi;
                 }

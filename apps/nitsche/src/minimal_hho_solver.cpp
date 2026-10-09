@@ -16,6 +16,11 @@
 #include "asm.hpp"
 #include "minimal_hho.hpp"
 
+template<typename T>
+struct robin_data {
+    T   alpha;
+    T   gR;
+};
 
 template<typename Mesh>
 struct poisson_data;
@@ -27,12 +32,25 @@ struct poisson_data<Mesh>
     using point_type = typename Mesh::point_type;
 
     T rhs(const point_type& pt, size_t tag) {
+        if (tag == 11011)
+            return 10/(0.0015*0.01*0.007);
+        
         return 0.0;
     }
 
+    T kappa(const point_type& pt, size_t tag) {
+        if (tag == 11016)
+            return 0.8;
+
+        if (tag == 11012 or tag == 11013 or tag == 11015 or tag == 11017 or tag == 11018)
+            return 20.0;
+
+        return 237.0;
+    }
+
     T dirichlet(const point_type& pt, size_t tag) {
-        if (tag == 143)
-            return 340.0;
+        //if (tag == 143)
+        //    return 340.0;
 
         return 0.0;
     }
@@ -41,8 +59,11 @@ struct poisson_data<Mesh>
         return -600.0;
     }
 
-    T robin(const point_type&, size_t tag) {
-        return 0.0;
+    robin_data<T> robin(const point_type&, size_t tag) {
+        return {
+            .alpha = 15.0,
+            .gR = 15.0 * 298.15
+        };
     }
 };
 
@@ -89,17 +110,27 @@ solver(solver_state<Mesh>& state)
 
     std::cout << "ASM" << std::endl;
     for (auto& cl : state.msh) {
+        auto di = state.msh.domain_info(cl);
+        auto kappa = state.data.kappa( barycenter(state.msh, cl), di.tag() );
+
         auto cb = disk::make_scalar_monomial_basis(state.msh, cl, state.degree+1);
 
         auto [R, A] = hho_minimal_reconstruction(state.msh, cl,
-            state.degree, 1.0, state.bcs
+            state.degree, state.bcs
         );
 
         auto S = hho_minimal_stabilization(state.msh, cl,
             state.degree, state.bcs);
         
-        mat lhs = 237.0*(A+S);
+        mat lhs = kappa*(A+S);
         vec rhs = vec::Zero( lhs.rows() );
+
+        auto qps = disk::integrate(state.msh, cl, 2*state.degree+2);
+        for (auto& qp : qps) {
+            auto phi = cb.eval_functions(qp.point());
+            auto f = state.data.rhs(qp.point(), di.tag());
+            rhs.head(cbs) += qp.weight() * f * phi;
+        }
 
         vec gD_rhs = vec::Zero(A.rows());
         auto fcs = faces(state.msh, cl);
@@ -134,9 +165,20 @@ solver(solver_state<Mesh>& state)
                         state.msh, fc, 2*state.degree);
                     for (const auto& qp : fqps) {
                         auto phi = cb.eval_functions(qp.point());
-                        //auto gN_val = gN(qp.point());
-                        /* (gN, w)_F */
-                        rhs.head(cbs) += qp.weight() * state.data.neumann(qp.point(), boundary_id) * phi;
+                        auto gN = state.data.neumann(qp.point(), boundary_id);
+                        rhs.head(cbs) += qp.weight() * gN * phi;
+                    }
+                }
+
+                if (state.bcs[gofs] == bc::robin) {
+                    auto fqps = disk::integrate(
+                        state.msh, fc, 2*state.degree);
+                    for (const auto& qp : fqps) {
+                        auto phi = cb.eval_functions(qp.point());
+                        /* (gR, w)_F */
+                        auto [alpha, gR] = state.data.robin(qp.point(), boundary_id);
+                        lhs.topLeftCorner(cbs, cbs) += alpha * qp.weight() * phi * phi.transpose();
+                        rhs.head(cbs) += qp.weight() * gR * phi;
                     }
                 }
             }
@@ -161,7 +203,6 @@ solver(solver_state<Mesh>& state)
     size_t cell_i = 0;
     for (auto& cl : state.msh)
     {
-        
         const auto& [lhs, rhs] = lcs[cell_i++];
         auto locsolF = assm.take_local_solution(state.msh, cl, sol);
         
@@ -188,19 +229,27 @@ void init_problem(solver_state<Mesh>& state)
     state.degree = 0;
     state.bcs.resize( state.msh.faces_size(), bc::none );
 
+    size_t bndfcs = 0;
+
     for (auto& fc : faces(state.msh)) {
         auto bi = state.msh.boundary_info(fc);
-        if ( bi.is_boundary() ) {
+        if ( bi.is_boundary() and not bi.is_internal() ) {
             auto gofs = offset(state.msh, fc); 
-            state.bcs[ gofs ] = bc::neumann;
+            state.bcs[ gofs ] = bc::robin;
             
-            if ( (bi.tag() == 143) ) {
-                auto bar = barycenter(state.msh, fc);
-                if ( bar.x() < 0.005 && bar.x() > -0.005 && bar.y()<0.020 && bar.y() > 0.010)
-                    state.bcs[ gofs ] = bc::dirichlet;
-            }
+            bndfcs++;
+
+            //if ( (bi.tag() == 143) ) {
+            //    auto bar = barycenter(state.msh, fc);
+            //    if ( bar.x() < 0.005 && bar.x() > -0.005 && bar.y()<0.020 && bar.y() > 0.010)
+            //        state.bcs[ gofs ] = bc::dirichlet;
+            //}
         }
     }
+
+    std::cout << "bnd: " << bndfcs << ", tot: " << state.msh.faces_size();
+    std::cout << ", ratio: " << (100.0*bndfcs)/state.msh.faces_size();
+    std::cout << "%" << std::endl;
 }
 
 int main(int argc, const char *argv[])

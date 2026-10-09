@@ -6,7 +6,7 @@
 template<typename Mesh>
 auto hho_minimal_reconstruction(const Mesh& msh,
     const typename Mesh::cell_type& cl, size_t degree,
-    typename Mesh::coordinate_type eta, const std::vector<bc>& bcs)
+    const std::vector<bc>& bcs)
 {
     using scalar_type = typename Mesh::coordinate_type;
     /* Reconstruction space basis */
@@ -25,10 +25,6 @@ auto hho_minimal_reconstruction(const Mesh& msh,
 
     /* Stiffness */
     disk::dynamic_matrix<scalar_type> K =
-        disk::dynamic_matrix<scalar_type>::Zero(rbs, rbs);
-    
-    /* Robin */
-    disk::dynamic_matrix<scalar_type> R =
         disk::dynamic_matrix<scalar_type>::Zero(rbs, rbs);
 
     /* Local problem RHS */
@@ -57,45 +53,37 @@ auto hho_minimal_reconstruction(const Mesh& msh,
         auto n = normal(msh, cl, fc);
         auto fcid = offset(msh, fc);
 
-        if (bi.is_boundary()) { /* Do "minimal hho" if on a domain boundary */
+        if (bi.is_boundary() and not bi.is_internal()) { /* Do "minimal hho" if on a domain boundary */
 
             if (bcs[fcid] == bc::dirichlet) {
                 for (const auto& qp : fqps) {
                     auto cphi = rb.eval_functions(qp.point());
                     auto fphi = fb.eval_functions(qp.point());
                     auto dphi = rb.eval_gradients(qp.point());
-                    RHS.block(0,   0, rbs, rbs) -= qp.weight() * (dphi*n) * cphi.transpose();
-                    RHS.block(0, ofs, rbs, fbs) += qp.weight() * (dphi*n) * fphi.transpose();
+                    RHS.block(0,   0, rbs, rbs) -=
+                        qp.weight() * (dphi*n) * cphi.transpose();
+                    RHS.block(0, ofs, rbs, fbs) +=
+                        qp.weight() * (dphi*n) * fphi.transpose();
                 }
             }
 
-            if (bcs[fcid] == bc::neumann) {
-            }
-
-            if (bcs[fcid] == bc::robin) {
-                
-                for (const auto& qp : fqps) {
-                    auto cphi = rb.eval_functions(qp.point());
-                    R += qp.weight() * cphi * cphi.transpose();
-                }
-
-            }
+            /* nothing to do if on Neumann or Robin faces */
 
         } else { /* Do standard HHO if not on a domain boundary */
             for (const auto& qp : fqps) {
                 auto cphi = rb.eval_functions(qp.point());
                 auto fphi = fb.eval_functions(qp.point());
                 auto dphi = rb.eval_gradients(qp.point());
-                RHS.block(0,   0, rbs, rbs) -= qp.weight() * (dphi*n) * cphi.transpose();
-                RHS.block(0, ofs, rbs, fbs) += qp.weight() * (dphi*n) * fphi.transpose();
+                RHS.block(0,   0, rbs, rbs) -=
+                    qp.weight() * (dphi*n) * cphi.transpose();
+                RHS.block(0, ofs, rbs, fbs) +=
+                    qp.weight() * (dphi*n) * fphi.transpose();
             }
         }
     }
 
     disk::dynamic_matrix<scalar_type> oper = LHS.fullPivLu().solve(RHS);
     disk::dynamic_matrix<scalar_type> data = oper.transpose() * RHS;
-
-    data.block(0,0,rbs,rbs) += R;
 
     return std::pair{oper, data};
 }
@@ -132,7 +120,7 @@ hho_minimal_stabilization(const Mesh& msh,
         /* If the face is on the domain boundary, just skip to the next */
         auto bi = msh.boundary_info(fc);
         auto fcid = offset(msh, fc);
-        if (bi.is_boundary() and (bcs[fcid] != bc::dirichlet)) {
+        if (bi.is_boundary() and (not bi.is_internal()) and (bcs[fcid] != bc::dirichlet)) {
             continue;
         }
 
