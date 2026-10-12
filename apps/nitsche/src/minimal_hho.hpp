@@ -9,6 +9,7 @@ auto hho_minimal_reconstruction(const Mesh& msh,
     const std::vector<bc>& bcs)
 {
     using scalar_type = typename Mesh::coordinate_type;
+    static const size_t DIM = Mesh::dimension;
     /* Reconstruction space basis */
     auto rb = disk::make_scalar_monomial_basis(msh, cl, degree+1);
     auto rbs = rb.size();
@@ -20,16 +21,17 @@ auto hho_minimal_reconstruction(const Mesh& msh,
     auto fbs = disk::scalar_basis_size(degree, Mesh::dimension-1);
     auto n_allfacedofs = fcs.size() * fbs;
 
-    disk::dynamic_matrix<scalar_type> LHS =
-        disk::dynamic_matrix<scalar_type>::Zero(rbs, rbs);
+    using mat = disk::dynamic_matrix<scalar_type>;
+    using vec = disk::dynamic_vector<scalar_type>;
+    using grad = Eigen::Matrix<scalar_type, Eigen::Dynamic, DIM>;
+
+    mat LHS = mat::Zero(rbs-1, rbs-1);
 
     /* Stiffness */
-    disk::dynamic_matrix<scalar_type> K =
-        disk::dynamic_matrix<scalar_type>::Zero(rbs, rbs);
+    mat K = mat::Zero(rbs, rbs);
 
     /* Local problem RHS */
-    disk::dynamic_matrix<scalar_type> RHS =
-        disk::dynamic_matrix<scalar_type>::Zero(rbs, rbs + n_allfacedofs);
+    mat RHS = mat::Zero(rbs-1, rbs + n_allfacedofs);
     
 
     auto qps = disk::integrate(msh, cl, 2*degree);
@@ -40,8 +42,8 @@ auto hho_minimal_reconstruction(const Mesh& msh,
         K += (qp.weight() * dphi) * dphi.transpose();
     }
 
-    LHS.block(0,0,rbs,rbs) += K.block(0,0,rbs,rbs);
-    RHS.block(0,0,rbs,rbs) += K.block(0,0,rbs,rbs);
+    LHS.block(0,0,rbs-1,rbs-1) += K.block(1,1,rbs-1,rbs-1);
+    RHS.block(0,0,rbs-1,rbs) += K.block(1,0,rbs-1,rbs);
 
     auto inv_hT = 1.0/diameter(msh, cl);
     for (size_t fcnum = 0; fcnum < fcs.size(); fcnum++) {
@@ -59,10 +61,10 @@ auto hho_minimal_reconstruction(const Mesh& msh,
                 for (const auto& qp : fqps) {
                     auto cphi = rb.eval_functions(qp.point());
                     auto fphi = fb.eval_functions(qp.point());
-                    auto dphi = rb.eval_gradients(qp.point());
-                    RHS.block(0,   0, rbs, rbs) -=
+                    grad dphi = rb.eval_gradients(qp.point()).block(1,0,rbs-1,DIM);
+                    RHS.block(0,   0, rbs-1, rbs) -=
                         qp.weight() * (dphi*n) * cphi.transpose();
-                    RHS.block(0, ofs, rbs, fbs) +=
+                    RHS.block(0, ofs, rbs-1, fbs) +=
                         qp.weight() * (dphi*n) * fphi.transpose();
                 }
             }
@@ -73,20 +75,82 @@ auto hho_minimal_reconstruction(const Mesh& msh,
             for (const auto& qp : fqps) {
                 auto cphi = rb.eval_functions(qp.point());
                 auto fphi = fb.eval_functions(qp.point());
-                auto dphi = rb.eval_gradients(qp.point());
-                RHS.block(0,   0, rbs, rbs) -=
+                grad dphi = rb.eval_gradients(qp.point()).block(1,0,rbs-1,DIM);
+                RHS.block(0,   0, rbs-1, rbs) -=
                     qp.weight() * (dphi*n) * cphi.transpose();
-                RHS.block(0, ofs, rbs, fbs) +=
+                RHS.block(0, ofs, rbs-1, fbs) +=
                     qp.weight() * (dphi*n) * fphi.transpose();
             }
         }
     }
 
-    disk::dynamic_matrix<scalar_type> oper = LHS.fullPivLu().solve(RHS);
-    disk::dynamic_matrix<scalar_type> data = oper.transpose() * RHS;
+    mat oper = LHS.llt().solve(RHS);
+    mat data = oper.transpose() * RHS;
 
     return std::pair{oper, data};
 }
+
+template<typename Mesh, typename Space = disk::hho::slapl::hho_space<Mesh>>
+auto
+hho_minimal_reconstruction_n(const Mesh& msh,
+    const typename Mesh::cell_type& cl, size_t degree,
+    const std::vector<bc>& bcs)
+{
+    using namespace disk::basis;
+    using T = typename Space::scalar_type;
+
+    disk::hho::slapl::degree_info di(degree+1, degree);
+
+    auto phiR = Space::reco_basis(msh, cl, di.reco);
+    auto phiT = Space::cell_basis(msh, cl, di.cell);
+
+    auto [szT, szF, szR] = space_dimensions<Space>(di);
+
+    auto fcs = faces(msh, cl);
+    auto num_faces = fcs.size();
+    assert(szR > 0);
+    auto allcols = szT + num_faces*szF;
+
+    using mat = disk::dynamic_matrix<T>;
+
+    mat stiffness = integrate(msh, cl, grad(phiR), grad(phiR));
+    mat lhs = stiffness.bottomRightCorner(szR-1, szR-1);
+    mat rhs = mat::Zero(szR-1, allcols);
+    rhs.block(0,0,szR-1,szT) = stiffness.bottomLeftCorner(szR-1, szT);
+
+    size_t ofs = szT;
+    for (const auto& fc : fcs)
+    {
+        auto n = normal(msh, cl, fc);
+        auto phiF = Space::face_basis(msh, fc, di.face);
+        auto fcid = offset(msh, fc);
+        auto bi = msh.boundary_info(fc);
+
+        if (bi.is_boundary() and not bi.is_internal()) {
+            if (bcs[fcid] == bc::dirichlet) {
+
+                rhs.block(0,ofs,szR-1,szF) += 
+                    integrate(msh, fc, phiF, grad(phiR).dot(n)).block(1,0,szR-1,szF);
+
+                rhs.block(0,0,szR-1,szT) -=
+                    integrate(msh, fc, phiT, grad(phiR).dot(n)).block(1,0,szR-1,szT);
+            }
+        } else {
+            rhs.block(0,ofs,szR-1,szF) += 
+                integrate(msh, fc, phiF, grad(phiR).dot(n)).block(1,0,szR-1,szF);
+
+            rhs.block(0,0,szR-1,szT) -=
+                integrate(msh, fc, phiT, grad(phiR).dot(n)).block(1,0,szR-1,szT);
+        }
+
+        ofs += szF;
+    }
+
+    mat R = lhs.llt().solve(rhs);
+    mat A = rhs.transpose()*R;
+    return std::pair(R, A);
+}
+
 
 template<typename Mesh>
 disk::dynamic_matrix<typename Mesh::coordinate_type>
@@ -151,13 +215,63 @@ hho_minimal_stabilization(const Mesh& msh,
         }
 
         tr.block(0, ofs, fbs, fbs) = -mass;
-        tr.block(0, 0, fbs, cbs)      = trace;
+        tr.block(0, 0, fbs, cbs)   = trace;
 
-        oper.block(0, 0, fbs, cbs) = mass.ldlt().solve(trace);
+        oper.block(0, 0, fbs, cbs) = mass.llt().solve(trace);
         data += oper.transpose() * tr * stabparam;
     }
 
     return data;
+}
+
+template<typename Mesh, typename Space = disk::hho::slapl::hho_space<Mesh>>
+disk::dynamic_matrix<typename Space::scalar_type>
+hho_minimal_stabilization_n(const Mesh& msh,
+    const typename Mesh::cell_type& cl, size_t degree,
+    const std::vector<bc>& bcs)
+{
+    using namespace disk::basis;
+    using T = typename Space::scalar_type;
+    using mat = disk::dynamic_matrix<T>;
+
+    disk::hho::slapl::degree_info di(degree+1, degree);
+
+    auto [szT, szF, szR] = space_dimensions<Space>(di);
+    auto fcs = faces(msh, cl);
+    auto num_faces = fcs.size();
+
+    auto sz_total = szT + num_faces*szF;
+    mat S = mat::Zero(sz_total, sz_total);
+
+    auto phiT = Space::cell_basis(msh, cl, di.cell);
+    auto phiR = Space::reco_basis(msh, cl, di.reco);
+    
+    auto scale = 1./diameter(msh, cl);
+
+    size_t ofs = szT;
+    for (const auto& fc : fcs)
+    {
+        auto bi = msh.boundary_info(fc);
+        auto fcid = offset(msh, fc);
+        if (bi.is_boundary() and (not bi.is_internal()) and (bcs[fcid] != bc::dirichlet)) {
+            continue;
+        }
+
+        auto phiF = Space::face_basis(msh, fc, di.face);
+        mat MF = integrate(msh, fc, phiF, phiF);
+        Eigen::LLT<mat> MF_llt(MF);
+        mat T2F = integrate(msh, fc, phiT, phiF);
+        mat P2 = MF_llt.solve(T2F);
+
+        mat rhs = mat::Zero(szF, szT+num_faces*szF);
+        rhs.block(0,0,szF,szT) = -P2;
+        rhs.block(0,ofs,szF,szF) = mat::Identity(szF, szF);
+
+        S += scale * rhs.transpose() * MF * rhs;
+        ofs += szF;
+    }
+
+    return S;
 }
 
 template<typename Mesh, typename SourceFun,

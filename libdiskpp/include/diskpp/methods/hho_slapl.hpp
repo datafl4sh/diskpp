@@ -192,7 +192,7 @@ local_stabilization_hdg(const Mesh& msh, const typename Mesh::cell_type& cl,
     auto phiT = Space::cell_basis(msh, cl, di.cell);
     auto phiR = Space::reco_basis(msh, cl, di.reco);
     
-    auto scale = 1.;///diameter(msh, cl);
+    auto scale = 1./diameter(msh, cl);
 
     size_t offset = szT;
     for (const auto& fc : fcs)
@@ -259,6 +259,15 @@ make_assembler(const Mesh& msh, const degree_info& di)
 {
     using fbt = typename Space::face_basis_type;
     return basic_condensed_assembler<Mesh, fbt>(msh, di.face);
+}
+
+template<typename Mesh, typename Space = hho_space<Mesh>>
+auto
+make_assembler(const Mesh& msh, const degree_info& di,
+    const std::vector<bool>& dirfaces)
+{
+    using fbt = typename Space::face_basis_type;
+    return basic_condensed_assembler<Mesh, fbt>(msh, di.face, dirfaces);
 }
 
 } // namespace slapl

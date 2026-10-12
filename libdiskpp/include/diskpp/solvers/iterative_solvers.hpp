@@ -24,7 +24,6 @@ cg(const iterative_solver_params& params, const priv::spmat<T>& A,
 {
     auto operA = operator_from_matrix(A);
     auto id = identity{};
-
     return cg_mf(params, operA, b, x, id);
 }
 
