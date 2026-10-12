@@ -247,9 +247,10 @@ hho_minimal_stabilization_n(const Mesh& msh,
     
     auto scale = 1./diameter(msh, cl);
 
-    size_t ofs = szT;
-    for (const auto& fc : fcs)
+    for (size_t i = 0; i < fcs.size(); i++)
     {
+        size_t ofs = szT + i*szF;
+        auto& fc = fcs[i];
         auto bi = msh.boundary_info(fc);
         auto fcid = offset(msh, fc);
         if (bi.is_boundary() and (not bi.is_internal()) and (bcs[fcid] != bc::dirichlet)) {
@@ -266,7 +267,6 @@ hho_minimal_stabilization_n(const Mesh& msh,
         rhs.block(0,ofs,szF,szF) = mat::Identity(szF, szF);
 
         S += scale * rhs.transpose() * MF * rhs;
-        ofs += szF;
     }
 
     return S;

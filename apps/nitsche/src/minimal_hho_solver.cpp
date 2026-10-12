@@ -38,6 +38,7 @@ struct poisson_data<Mesh>
     using point_type = typename Mesh::point_type;
 
     T rhs(const point_type& pt, size_t tag) {
+
         if (tag == 11011)
             return 10/(0.0015*0.01*0.007);
         
@@ -182,7 +183,7 @@ solver_minimal(solver_state<Mesh>& state)
             rhs.head(cbs) += qp.weight() * f(qp.point()) * phi;
         }
         #else
-        rhs.head(phiT.size()) = integrate(state.msh, cl, f, phiT);
+        rhs.head(cbs) = integrate(state.msh, cl, f, phiT);
         #endif
 
         vec gD_rhs = vec::Zero(A.rows());
@@ -190,7 +191,7 @@ solver_minimal(solver_state<Mesh>& state)
         auto ofs = cbs;
         for (auto& fc : fcs) {
             auto bi = state.msh.boundary_info(fc);
-            if (bi.is_boundary()){
+            if (bi.is_boundary() and not bi.is_internal()){
                 auto boundary_id = bi.tag();
                 auto gofs = offset(state.msh, fc);
          
@@ -233,7 +234,7 @@ solver_minimal(solver_state<Mesh>& state)
                         /* (gR, w)_F */
                         auto [alpha, gR] = state.data.robin(qp.point(), boundary_id);
                         lhs.topLeftCorner(cbs, cbs) += alpha * qp.weight() * phi * phi.transpose();
-                        //rhs.head(cbs) += qp.weight() * gR * phi;
+                        rhs.head(cbs) += qp.weight() * gR * phi;
                     }
                 }
             }
@@ -489,7 +490,7 @@ void init_problem(solver_state<Mesh>& state)
         }
     );
 
-    state.degree = 1;
+    state.degree = 0;
     state.bcs.resize( state.msh.faces_size(), bc::none );
 
     size_t bndfcs = 0;
