@@ -490,7 +490,7 @@ void init_problem(solver_state<Mesh>& state)
         }
     );
 
-    state.degree = 0;
+    state.degree = 2;
     state.bcs.resize( state.msh.faces_size(), bc::none );
 
     size_t bndfcs = 0;

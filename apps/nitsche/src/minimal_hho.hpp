@@ -146,7 +146,7 @@ hho_minimal_reconstruction_n(const Mesh& msh,
         ofs += szF;
     }
 
-    mat R = lhs.llt().solve(rhs);
+    mat R = lhs.ldlt().solve(rhs);
     mat A = rhs.transpose()*R;
     return std::pair(R, A);
 }
@@ -260,7 +260,7 @@ hho_minimal_stabilization_n(const Mesh& msh,
         auto phiF = Space::face_basis(msh, fc, di.face);
         mat MF = integrate(msh, fc, phiF, phiF);
         mat T2F = integrate(msh, fc, phiT, phiF);
-        Eigen::LLT<mat> MF_llt(MF);
+        Eigen::LDLT<mat> MF_llt(MF);
         
         mat rhs = mat::Zero(szF, szT+num_faces*szF);
         rhs.block(0,0,szF,szT) = -MF_llt.solve(T2F);
