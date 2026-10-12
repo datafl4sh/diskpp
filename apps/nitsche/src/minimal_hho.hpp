@@ -84,7 +84,7 @@ auto hho_minimal_reconstruction(const Mesh& msh,
         }
     }
 
-    mat oper = LHS.llt().solve(RHS);
+    mat oper = LHS.ldlt().solve(RHS);
     mat data = oper.transpose() * RHS;
 
     return std::pair{oper, data};
@@ -151,7 +151,6 @@ hho_minimal_reconstruction_n(const Mesh& msh,
     return std::pair(R, A);
 }
 
-
 template<typename Mesh>
 disk::dynamic_matrix<typename Mesh::coordinate_type>
 hho_minimal_stabilization(const Mesh& msh,
@@ -217,7 +216,7 @@ hho_minimal_stabilization(const Mesh& msh,
         tr.block(0, ofs, fbs, fbs) = -mass;
         tr.block(0, 0, fbs, cbs)   = trace;
 
-        oper.block(0, 0, fbs, cbs) = mass.llt().solve(trace);
+        oper.block(0, 0, fbs, cbs) = mass.ldlt().solve(trace);
         data += oper.transpose() * tr * stabparam;
     }
 
@@ -259,12 +258,11 @@ hho_minimal_stabilization_n(const Mesh& msh,
 
         auto phiF = Space::face_basis(msh, fc, di.face);
         mat MF = integrate(msh, fc, phiF, phiF);
-        Eigen::LLT<mat> MF_llt(MF);
         mat T2F = integrate(msh, fc, phiT, phiF);
-        mat P2 = MF_llt.solve(T2F);
-
+        Eigen::LLT<mat> MF_llt(MF);
+        
         mat rhs = mat::Zero(szF, szT+num_faces*szF);
-        rhs.block(0,0,szF,szT) = -P2;
+        rhs.block(0,0,szF,szT) = -MF_llt.solve(T2F);
         rhs.block(0,ofs,szF,szF) = mat::Identity(szF, szF);
 
         S += scale * rhs.transpose() * MF * rhs;

@@ -177,7 +177,7 @@ minimal_hho_solver(const Mesh& msh, size_t degree, const std::vector<bc>& bcs)
     auto rhsfun = make_rhs_function(msh);
 
     for (auto& cl : msh) {
-        auto [R, A] = hho_minimal_reconstruction(msh, cl, degree, eta, bcs);
+        auto [R, A] = hho_minimal_reconstruction(msh, cl, degree, bcs);
         auto S = hho_minimal_stabilization(msh, cl, degree, bcs);
         disk::dynamic_matrix<scalar_type> lhs = A+S;
 
@@ -188,6 +188,7 @@ minimal_hho_solver(const Mesh& msh, size_t degree, const std::vector<bc>& bcs)
                 gR,    // robin
                 degree, eta, bcs);
 
+        auto cb = disk::make_scalar_monomial_basis(msh, cl, degree+1);
 
         disk::dynamic_vector<scalar_type> gD_rhs =
             disk::dynamic_vector<scalar_type>::Zero(A.rows());
@@ -197,7 +198,8 @@ minimal_hho_solver(const Mesh& msh, size_t degree, const std::vector<bc>& bcs)
             auto bi = msh.boundary_info(fc);
             if (bi.is_boundary()){
                 auto boundary_id = bi.id();
-                if ( bcs[offset(msh, fc)] == bc::dirichlet ) {
+                auto gofs = offset(msh, fc);
+                if ( bcs[gofs] == bc::dirichlet ) {
                     auto fb = disk::make_scalar_monomial_basis(msh, fc, degree);
                     auto fqps = disk::integrate(msh, fc, 2*degree);
                     disk::dynamic_matrix<scalar_type> M =
@@ -210,6 +212,15 @@ minimal_hho_solver(const Mesh& msh, size_t degree, const std::vector<bc>& bcs)
                         f_gD += qp.weight() * gD(qp.point()) * phi;
                     }
                     gD_rhs.segment(ofs, fbs) += M.ldlt().solve(f_gD);
+                }
+
+                if (bcs[gofs] == bc::robin) {
+                    auto fqps = disk::integrate(msh, fc, 2*degree+2);
+                    for (const auto& qp : fqps) {
+                        auto phi = cb.eval_functions( qp.point() );
+                        /* (gR, w)_F */
+                        lhs.topLeftCorner(cbs, cbs) += qp.weight() * phi * phi.transpose();
+                    }
                 }
             }
             ofs += fbs;

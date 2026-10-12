@@ -11,6 +11,7 @@
 #include "diskpp/output/silo.hpp"
 #include "diskpp/solvers/direct_solvers.hpp"
 #include "diskpp/solvers/iterative_solvers.hpp"
+#include "diskpp/solvers/eigensolvers.hpp"
 #include "diskpp/bases/bases.hpp"
 #include "diskpp/methods/hho"
 #include "diskpp/bases/bases_new.hpp"
@@ -110,7 +111,7 @@ struct solver_state
 };
 
 
-#define OLD
+//#define OLD
 
 template<typename Mesh>
 auto
@@ -181,7 +182,6 @@ solver_minimal(solver_state<Mesh>& state)
             rhs.head(cbs) += qp.weight() * f(qp.point()) * phi;
         }
         #else
-        
         rhs.head(phiT.size()) = integrate(state.msh, cl, f, phiT);
         #endif
 
@@ -233,7 +233,7 @@ solver_minimal(solver_state<Mesh>& state)
                         /* (gR, w)_F */
                         auto [alpha, gR] = state.data.robin(qp.point(), boundary_id);
                         lhs.topLeftCorner(cbs, cbs) += alpha * qp.weight() * phi * phi.transpose();
-                        rhs.head(cbs) += qp.weight() * gR * phi;
+                        //rhs.head(cbs) += qp.weight() * gR * phi;
                     }
                 }
             }
@@ -251,7 +251,10 @@ solver_minimal(solver_state<Mesh>& state)
 
     std::cout << "Solve: " << std::endl;
     std::cout << " Unknowns: " << assm.LHS.rows() << " ";
-    std::cout << " Nonzeros: " << assm.LHS.nonZeros() << std::endl;
+    std::cout << " Nonzeros: " << assm.LHS.nonZeros() << " (";
+    std::cout << (100.0*assm.LHS.nonZeros())/(assm.LHS.rows()*assm.LHS.cols());
+    std::cout << "%)\n";
+
     vec sol;
     tc.tic();
     disk::solvers::sparse_lu(assm.LHS, assm.RHS, sol);
@@ -262,19 +265,49 @@ solver_minimal(solver_state<Mesh>& state)
     //disk::solvers::cg(parms, assm.LHS, assm.RHS, sol);
     std::cout << " " << tc.toc() << " seconds\n";
 
+    //auto [evmax, emax] = disk::solvers::powiter(assm.LHS).value();
+    //auto [evmin, emin] = disk::solvers::inv_powiter(assm.LHS, 0.0).value();
+    //std::cout << "Max eigval: " << emax << ", min eigval: ";
+    //std::cout << emin << ", cond: " << emax/emin << "\n";
+
     std::cout << "Postpro: " << std::flush;
     tc.tic();
     std::vector<T> u_data;
     size_t cell_i = 0;
+    T flux = 0.0;
     for (auto& cl : state.msh)
     {
+        #ifdef OLD
+        auto cb = disk::make_scalar_monomial_basis(state.msh, cl, state.degree+1);
+        #endif
         const auto& [lhs, rhs] = lcs[cell_i++];
         auto locsolF = assm.take_local_solution(state.msh, cl, sol);
         auto phiT = hho_space<mesh_type>::cell_basis(state.msh, cl, hdi.cell);   
         vec locsol = disk::hho::deschur(lhs, rhs, locsolF, phiT);
         u_data.push_back(locsol(0));
+
+        auto di = state.msh.domain_info(cl);
+        auto kappa = state.data.kappa( barycenter(state.msh, cl), di.tag() );
+
+        auto fcs = faces(state.msh, cl);
+        for (auto& fc : fcs) {
+            auto bi = state.msh.boundary_info(fc);
+            if (bi.is_boundary() and not bi.is_internal()) {
+                auto n = normal(state.msh, cl, fc);
+                auto fqps = disk::integrate(state.msh, fc, hdi.cell);
+                for (auto& qp : fqps) {
+                    #ifdef OLD
+                    flux += kappa * qp.weight() * (cb.eval_gradients(qp.point()).transpose() * locsol.head(cbs)).dot(n);
+                    #else
+                    flux += kappa * qp.weight() * (grad(phiT)(qp.point()).transpose() * locsol.head(cbs)).dot(n);
+                    #endif
+                }
+            }
+        }
     }
     std::cout << tc.toc() << " seconds\n";
+
+    std::cout << "Boundary flux: " << flux << "\n";
 
     state.silo.add_variable("mesh", "u_mcs", u_data, disk::zonal_variable_t);
 }
@@ -383,8 +416,6 @@ solver_std(solver_state<Mesh>& state)
         }
         //rhs += -lhs*gD_rhs;
 
-
-
         lcs.push_back({lhs, rhs});
         auto [lhsc, rhsc] = disk::hho::schur(lhs, rhs, phiT);
         assm.assemble(state.msh, cl, lhsc, rhsc);
@@ -394,7 +425,10 @@ solver_std(solver_state<Mesh>& state)
 
     std::cout << "Solve: " << std::endl;
     std::cout << " Unknowns: " << assm.LHS.rows() << " ";
-    std::cout << " Nonzeros: " << assm.LHS.nonZeros() << std::endl;
+    std::cout << " Nonzeros: " << assm.LHS.nonZeros() << " (";
+    std::cout << (100.0*assm.LHS.nonZeros())/(assm.LHS.rows()*assm.LHS.cols());
+    std::cout << "%)\n";
+
     vec sol;
     tc.tic();
     disk::solvers::sparse_lu(assm.LHS, assm.RHS, sol);
@@ -405,10 +439,16 @@ solver_std(solver_state<Mesh>& state)
     //disk::solvers::cg(parms, assm.LHS, assm.RHS, sol);
     std::cout << " " << tc.toc() << " seconds\n";
 
+    //auto [evmax, emax] = disk::solvers::powiter(assm.LHS).value();
+    //auto [evmin, emin] = disk::solvers::inv_powiter(assm.LHS, 0.0).value();
+    //std::cout << "Max eigval: " << emax << ", min eigval: ";
+    //std::cout << emin << ", cond: " << emax/emin << "\n";
+
     std::cout << "Postpro: " << std::flush;
     tc.tic();
     std::vector<T> u_data;
     size_t cell_i = 0;
+    T flux = 0.0;
     for (auto& cl : state.msh)
     {
         const auto& [lhs, rhs] = lcs[cell_i++];
@@ -416,8 +456,25 @@ solver_std(solver_state<Mesh>& state)
         auto phiT = hho_space<mesh_type>::cell_basis(state.msh, cl, hdi.cell);   
         vec locsol = disk::hho::deschur(lhs, rhs, locsolF, phiT);
         u_data.push_back(locsol(0));
+
+        auto di = state.msh.domain_info(cl);
+        auto kappa = state.data.kappa( barycenter(state.msh, cl), di.tag() );
+
+        auto fcs = faces(state.msh, cl);
+        for (auto& fc : fcs) {
+            auto bi = state.msh.boundary_info(fc);
+            if (bi.is_boundary() and not bi.is_internal()) {
+                auto n = normal(state.msh, cl, fc);
+                auto fqps = disk::integrate(state.msh, fc, hdi.cell);
+                for (auto& qp : fqps) {
+                    flux += kappa * qp.weight() * (grad(phiT)(qp.point()).transpose() * locsol.head(cbs)).dot(n);
+                }
+            }
+        }
     }
     std::cout << tc.toc() << " seconds\n";
+
+    std::cout << "Boundary flux: " << flux << "\n";
 
     state.silo.add_variable("mesh", "u_std", u_data, disk::zonal_variable_t);
 
