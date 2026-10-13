@@ -590,6 +590,65 @@ scaled_inertia_axes(const Mesh& msh, const Elem& elem)
     return eigvecs;
 }
 
+
+template<typename Mesh>
+static_matrix<typename Mesh::coordinate_type, Mesh::dimension, Mesh::dimension>
+scaled_inertia_axes_face(const Mesh& msh, const typename Mesh::face_type& fc)
+{
+    using T = typename Mesh::coordinate_type;
+    static const size_t DIM = Mesh::dimension;
+    using matc = static_matrix<T, DIM, DIM>;
+    using matf = static_matrix<T, DIM-1, DIM-1>;
+    using matcf = static_matrix<T, DIM-1, DIM>;
+    using vecc = static_vector<T, DIM>;
+    using vecf = static_vector<T, DIM-1>;
+
+    /* Establish an orthogonal reference coplanar with fc */
+    const auto bar = barycenter(msh, fc);
+    auto pts = points(msh, fc);
+    vecc u0 = (pts[0] - bar).to_vector();
+    vecc u1 = (pts[1] - bar).to_vector();
+    matc tr;
+    vecc v0 = u0;
+    vecc v1 = u1 - u1.dot(v0)*v0/v0.dot(v0);
+    vecc v2 = v0.cross(v1);
+    tr.col(0) = v0;
+    tr.col(1) = v1;
+    tr.col(2) = v2;
+
+    #if 0
+    matcf c2f = tr.inverse().block(0,0,DIM-1,DIM);
+
+    /* Build the mass matrix in the coplanar system */
+    matf mass = matf::Zero();
+    const auto qps = integrate(msh, fc, 2);
+    for (auto& qp : qps) {
+        vecf r = c2f*(bar - qp.point()).to_vector();
+        mass += qp.weight() * r * r.transpose();
+    }
+
+    Eigen::SelfAdjointEigenSolver<matf> es(mass);
+    matf eigvecs = es.eigenvectors();
+    vecf eigvals = es.eigenvalues();
+
+    /* Find the max eigenvalue */
+    T emax = eigvals.maxCoeff();
+
+    /* Rescale */
+    const auto inv_diam = 1.0; //2./diameter(msh,elem);
+    for (size_t i = 0; i < eigvals.size(); i++)
+        eigvecs.col(i) *= inv_diam*std::sqrt(emax/eigvals(i));
+    
+    matc ret;
+    ret.block(0,0,DIM,DIM-1) = tr.block(0,0,DIM,DIM-1)*eigvecs;
+    ret.col(2) = ret.col(0).cross(ret.col(1));
+    #endif
+    
+    return tr;
+}
+
+
+
 namespace priv {
 
 template<typename T, size_t DIM, size_t N>

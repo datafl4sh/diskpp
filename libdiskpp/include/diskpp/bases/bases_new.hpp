@@ -530,14 +530,8 @@ private:
     void
     compute_reference_frame(const mesh_type& msh, const cell_type& cl)
     {
-#if 0
-        tr_ = element_local_axes(msh, cl);
-        tr_ = tr_.inverse().eval();
-#endif
-//#if 0
         tr_ = scaled_inertia_axes(msh, cl);
         tr_ = tr_.transpose().eval();
-//#endif
     }
 
     point_type phys2ref(const point_type& pt) const {
@@ -693,23 +687,15 @@ private:
     {
         auto pts = points(msh, fc);
         assert(pts.size() >= 3);
-        vec_type u0 = (pts[1] - pts[0]).to_vector();
-        vec_type u1 = (pts[2] - pts[0]).to_vector();
-
-        //#if 0
-        v0_ = u0;
-        v1_ = u1 - u1.dot(v0_)*v0_/v0_.dot(v0_);
-        v2_ = v0_.cross(v1_);
-
-        tr_.col(0) = v0_;
-        tr_.col(1) = v1_;
-        tr_.col(2) = v2_;
-        tr_ = tr_.inverse().eval();
-        //#endif
-        #if 0
-        tr_ = scaled_inertia_axes(msh, fc);
-        tr_.transpose().eval();
-        #endif
+        if (false) { //pts.size() == 3 or pts.size() == 4) {
+            tr_.col(0) = (0.5*(pts[1]+pts[0]) - bar_).to_vector();
+            tr_.col(1) = (0.5*(pts[2]+pts[1]) - bar_).to_vector();
+            tr_.col(2) = tr_.col(0).cross( tr_.col(1) );
+            tr_ = tr_.inverse().eval();
+        } else {
+            tr_ = scaled_inertia_axes_face(msh,fc);
+            tr_ = tr_.inverse().eval();
+        }
     }
 
 

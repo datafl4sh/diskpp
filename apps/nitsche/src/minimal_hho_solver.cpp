@@ -259,11 +259,14 @@ solver_minimal(solver_state<Mesh>& state)
     vec sol;
     tc.tic();
     disk::solvers::sparse_lu(assm.LHS, assm.RHS, sol);
+
     //sol = vec::Zero(assm.LHS.rows());
     //disk::solvers::iterative_solver_params parms;
     //parms.max_iter = 2*assm.LHS.rows();
     //parms.verbose = true;
-    //disk::solvers::cg(parms, assm.LHS, assm.RHS, sol);
+    //disk::solvers::inverse_operator_from_matrix precond(assm.PRE);
+    //disk::solvers::cg(parms, assm.LHS, assm.RHS, sol, precond);
+    
     std::cout << " " << tc.toc() << " seconds\n";
 
     auto [evmax, emax] = disk::solvers::powiter(assm.LHS).value();
@@ -440,10 +443,10 @@ solver_std(solver_state<Mesh>& state)
     //disk::solvers::cg(parms, assm.LHS, assm.RHS, sol);
     std::cout << " " << tc.toc() << " seconds\n";
 
-    //auto [evmax, emax] = disk::solvers::powiter(assm.LHS).value();
-    //auto [evmin, emin] = disk::solvers::inv_powiter(assm.LHS, 0.0).value();
-    //std::cout << "Max eigval: " << emax << ", min eigval: ";
-    //std::cout << emin << ", cond: " << emax/emin << "\n";
+    auto [evmax, emax] = disk::solvers::powiter(assm.LHS).value();
+    auto [evmin, emin] = disk::solvers::inv_powiter(assm.LHS, 0.0).value();
+    std::cout << "Max eigval: " << emax << ", min eigval: ";
+    std::cout << emin << ", cond: " << emax/emin << "\n";
 
     std::cout << "Postpro: " << std::flush;
     tc.tic();
@@ -490,7 +493,7 @@ void init_problem(solver_state<Mesh>& state)
         }
     );
 
-    state.degree = 3;
+    state.degree = 2;
     state.bcs.resize( state.msh.faces_size(), bc::none );
 
     size_t bndfcs = 0;

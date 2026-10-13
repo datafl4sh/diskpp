@@ -30,7 +30,7 @@ cg(const iterative_solver_params& params, const priv::spmat<T>& A,
 template<typename T, typename Precond>
 iterative_solver_status
 cg(const iterative_solver_params& params, const priv::spmat<T>& A,
-    const priv::vec<T>& b, priv::vec<T>& x, Precond M)
+    const priv::vec<T>& b, priv::vec<T>& x, Precond& M)
 {
     auto operA = operator_from_matrix(A);
 

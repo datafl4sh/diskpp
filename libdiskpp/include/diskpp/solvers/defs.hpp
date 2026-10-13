@@ -76,6 +76,24 @@ struct operator_from_matrix {
         return M*V;
     }
 };
+
+template<typename T>
+struct inverse_operator_from_matrix {
+    mumps_solver<T> ldlt;
+
+    inverse_operator_from_matrix(priv::spmat<T>& pM)
+    {
+        ldlt.compute(pM);
+    }
+
+    priv::vec<T> operator()(const priv::vec<T>& v) const {
+        return ldlt.solve(v);
+    }
+
+    priv::mat<T> operator()(const priv::mat<T>& V) const {
+        return ldlt.solve(V);
+    }
+};
 struct identity {
     template<typename T>
     T&& operator()(T&& v) const noexcept {
