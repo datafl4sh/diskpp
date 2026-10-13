@@ -536,7 +536,7 @@ private:
 #endif
 //#if 0
         tr_ = scaled_inertia_axes(msh, cl);
-        tr_.transpose().eval();
+        tr_ = tr_.transpose().eval();
 //#endif
     }
 
