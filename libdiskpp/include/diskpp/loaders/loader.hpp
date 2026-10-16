@@ -80,6 +80,7 @@
 #include "loader_medit.hpp"
 #include "loader_netgen.hpp"
 #include "loader_poly.hpp"
+#include "loader_delynoi.hpp"
 #include "loader_uniform.hpp"
 #include "loader_utils.hpp"
 
@@ -149,6 +150,15 @@ bool
 load_mesh_diskpp_cartesian(const char* filename, disk::cartesian_mesh<T, 3>& msh)
 {
     disk::cartesian_mesh_loader<T, 3> loader;
+    return priv::load_mesh(filename, loader, msh);
+}
+
+template<typename T>
+bool
+load_mesh_delynoi_2d(const char* filename, disk::generic_mesh<T, 2>& msh)
+{
+    disk::delynoi_mesh_loader<T, 2> loader;
+    loader.verbose(true);
     return priv::load_mesh(filename, loader, msh);
 }
 

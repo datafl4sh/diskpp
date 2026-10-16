@@ -34,7 +34,17 @@ int main(int argc, const char *argv[])
 
     using T = double;
 
-        /* FVCA5 2D */
+    /* DELYNOI 2D */
+    if (std::regex_match(mesh_filename, std::regex(".*\\.txt$") ))
+    {
+        std::cout << "Guessed mesh format: DELYNOI 2D" << std::endl;
+        disk::generic_mesh<T,2> msh;
+        disk::load_mesh_delynoi_2d<T>(mesh_filename, msh);
+        export_mesh_to_silo(msh, silo_filename);
+        return 0;
+    }
+
+    /* FVCA5 2D */
     if (std::regex_match(mesh_filename, std::regex(".*\\.typ1$") ))
     {
         std::cout << "Guessed mesh format: FVCA5 2D" << std::endl;
