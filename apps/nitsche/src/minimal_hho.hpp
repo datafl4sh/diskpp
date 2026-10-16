@@ -126,16 +126,13 @@ hho_minimal_reconstruction_n(const Mesh& msh,
         auto fcid = offset(msh, fc);
         auto bi = msh.boundary_info(fc);
 
-        if (bi.is_boundary() and not bi.is_internal()) {
-            if (bcs[fcid] == bc::dirichlet) {
+        auto bnd = (bi.is_boundary()) and (not bi.is_internal())
+            and (bcs[fcid] == bc::dirichlet);
 
-                rhs.block(0,ofs,szR-1,szF) += 
-                    integrate(msh, fc, phiF, grad(phiR).dot(n)).block(1,0,szR-1,szF);
+        auto internal = ( bi.is_boundary() and bi.is_internal() )
+            or (not bi.is_boundary());
 
-                rhs.block(0,0,szR-1,szT) -=
-                    integrate(msh, fc, phiT, grad(phiR).dot(n)).block(1,0,szR-1,szT);
-            }
-        } else {
+        if (bnd or internal) {
             rhs.block(0,ofs,szR-1,szF) += 
                 integrate(msh, fc, phiF, grad(phiR).dot(n)).block(1,0,szR-1,szF);
 

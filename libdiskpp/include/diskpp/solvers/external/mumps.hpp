@@ -69,6 +69,14 @@
 #define MUMPS_OUTPUT_DIAG            2
 #define MUMPS_OUTPUT_GLOBAL          4
 
+#define MUMPS_ORDERING_AMD           0
+#define MUMPS_ORDERING_AMF           2
+#define MUMPS_ORDERING_SCOTCH        3
+#define MUMPS_ORDERING_PORD          4
+#define MUMPS_ORDERING_METIS         5
+#define MUMPS_ORDERING_QAMD          6
+#define MUMPS_ORDERING_AUTOSELECT    7
+
 /* This is typical Fortran madness: the
  * magic number -987654 is really required
  * to inform the mumps code to use the
@@ -192,7 +200,9 @@ public:
         state->id.icntl[1]= -1;//6;    // Suppress diagnostic output
         state->id.icntl[2]= -1;//6;    // Suppress global output
         state->id.icntl[3]= 2;         // Loglevel
-    
+   
+        state->id.icntl[6] = MUMPS_ORDERING_AUTOSELECT;
+
         if (state->id.infog[0] != 0) {
             state->fail = true;
         }
@@ -283,7 +293,12 @@ public:
         if (state->id.infog[0] != 0) {
             state->fail = true;
         }
-
+        /*
+        std::cout << "    Real space for factors:       " << state->id.info[8] << "\n";
+        std::cout << "    Max frontal matrix size:      " << state->id.info[10] << "\n";
+        std::cout << "    Memory effectively used (MB): " << state->id.infog[21] << "\n";
+        std::cout << "    Ops. in node elimination:     " << state->id.rinfog[2] << "\n";
+        */
         return ret;
     }
 

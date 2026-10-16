@@ -109,6 +109,7 @@ struct solver_state
     poisson_data<Mesh>      data;
     std::vector<bc>         bcs;
     disk::silo_database     silo;
+    bool                    mixed_order;
 };
 
 
@@ -153,6 +154,13 @@ solver_minimal(solver_state<Mesh>& state)
     std::vector<std::pair<mat, vec>> lcs;
     lcs.reserve( state.msh.cells_size() );
 
+    timecounter tcdetail;
+    double time_reco = 0.0;
+    double time_stab = 0.0;
+    double time_rhs = 0.0;
+    double time_schur = 0.0;
+    double time_bnd = 0.0;
+
     for (auto& cl : state.msh) {
         #ifdef OLD
         auto cb = disk::make_scalar_monomial_basis(state.msh, cl, state.degree+1);
@@ -164,10 +172,14 @@ solver_minimal(solver_state<Mesh>& state)
         auto [R, A] = hho_minimal_reconstruction(state.msh, cl, state.degree, state.bcs);
         auto S = hho_minimal_stabilization(state.msh, cl, state.degree, state.bcs);
         #else
+        tcdetail.tic();
         auto [R, A] = hho_minimal_reconstruction_n(state.msh, cl, state.degree, state.bcs);
+        time_reco += tcdetail.toc();
+        tcdetail.tic();
         auto S = hho_minimal_stabilization_n(state.msh, cl, state.degree, state.bcs);
+        time_stab += tcdetail.toc();
         #endif
-
+    
         auto phiT = hho_space<mesh_type>::cell_basis(state.msh, cl, hdi.cell);
 
         mat lhs = kappa*(A+S);
@@ -176,6 +188,7 @@ solver_minimal(solver_state<Mesh>& state)
             return state.data.rhs(pt, di.tag());
         };
         
+        tcdetail.tic();
         #ifdef OLD
         auto qps = disk::integrate(state.msh, cl, 2*state.degree+2);
         for (auto& qp : qps) {
@@ -185,7 +198,9 @@ solver_minimal(solver_state<Mesh>& state)
         #else
         rhs.head(cbs) = integrate(state.msh, cl, f, phiT);
         #endif
+        time_rhs += tcdetail.toc();
 
+        tcdetail.tic();
         vec gD_rhs = vec::Zero(A.rows());
         auto fcs = faces(state.msh, cl);
         auto ofs = cbs;
@@ -240,11 +255,18 @@ solver_minimal(solver_state<Mesh>& state)
             }
             ofs += fbs;
         }
+        time_bnd += tcdetail.toc();
+
         //rhs += -lhs*gD_rhs;
         lcs.push_back({lhs, rhs});
+        tcdetail.tic();
         auto [lhsc, rhsc] = disk::hho::schur(lhs, rhs, phiT);
+        time_schur += tcdetail.toc();
         assm.assemble(state.msh, cl, lhsc, rhsc);
     }
+
+    std::cout << "Reco: " << time_reco << ", stab: " << time_stab << ", rhs: " << time_rhs;
+    std::cout << ", bnd: " << time_bnd << ", schur: " << time_schur << "\n";
 
     assm.finalize();
 
@@ -258,7 +280,8 @@ solver_minimal(solver_state<Mesh>& state)
 
     vec sol;
     tc.tic();
-    disk::solvers::sparse_lu(assm.LHS, assm.RHS, sol);
+    disk::solvers::sparse_lu(assm.LHS, assm.RHS, sol,
+        disk::solvers::direct_solver::mumps);
 
     //sol = vec::Zero(assm.LHS.rows());
     //disk::solvers::iterative_solver_params parms;
@@ -269,10 +292,10 @@ solver_minimal(solver_state<Mesh>& state)
     
     std::cout << " " << tc.toc() << " seconds\n";
 
-    auto [evmax, emax] = disk::solvers::powiter(assm.LHS).value();
-    auto [evmin, emin] = disk::solvers::inv_powiter(assm.LHS, 0.0).value();
-    std::cout << "Max eigval: " << emax << ", min eigval: ";
-    std::cout << emin << ", cond: " << emax/emin << "\n";
+    //auto [evmax, emax] = disk::solvers::powiter(assm.LHS).value();
+    //auto [evmin, emin] = disk::solvers::inv_powiter(assm.LHS, 0.0).value();
+    //std::cout << "Max eigval: " << emax << ", min eigval: ";
+    //std::cout << emin << ", cond: " << emax/emin << "\n";
 
     std::cout << "Postpro: " << std::flush;
     tc.tic();
@@ -336,11 +359,23 @@ solver_std(solver_state<Mesh>& state)
 
     std::transform(state.bcs.begin(), state.bcs.end(), dirfaces.begin(), df);
 
-    degree_info hdi(state.degree);
+    degree_info hdi;
+    
+    if (state.mixed_order)
+        hdi = degree_info(state.degree+1, state.degree);
+    else
+        hdi = degree_info(state.degree);
 
     auto [cbs, fbs, rbs] = space_dimensions<hho_space<Mesh>>(hdi);
 
     condensed_assembler assm(state.msh, fbs, dirfaces);
+
+    timecounter tcdetail;
+    double time_reco = 0.0;
+    double time_stab = 0.0;
+    double time_rhs = 0.0;
+    double time_schur = 0.0;
+    double time_bnd = 0.0;
 
     timecounter tc;
 
@@ -355,17 +390,28 @@ solver_std(solver_state<Mesh>& state)
     {
         auto di = state.msh.domain_info(cl);
         auto kappa = state.data.kappa( barycenter(state.msh, cl), di.tag() );
+        tcdetail.tic();
         auto [R, A] = local_operator(state.msh, cl, hdi);
-        auto S = local_stabilization(state.msh, cl, hdi, R);
+        time_reco += tcdetail.toc();
+        tcdetail.tic();
+        mat S;
+        if (state.mixed_order)
+            S = local_stabilization_hdg(state.msh, cl, hdi);
+        else
+            S = local_stabilization(state.msh, cl, hdi, R);
+
+        time_stab += tcdetail.toc();
         mat lhs = kappa*(A+S);
         auto phiT = hho_space<mesh_type>::cell_basis(state.msh, cl, hdi.cell);
+        tcdetail.tic();
         auto f = [&](const point_type& pt) {
             return state.data.rhs(pt, di.tag());
         };
         vec rhs = vec::Zero( lhs.rows() );
         rhs.head(phiT.size()) = integrate(state.msh, cl, f, phiT);
+        time_rhs += tcdetail.toc();
 
-
+        tcdetail.tic();
         vec gD_rhs = vec::Zero(A.rows());
         auto fcs = faces(state.msh, cl);
         auto ofs = cbs;
@@ -418,13 +464,18 @@ solver_std(solver_state<Mesh>& state)
             }
             ofs += fbs;
         }
+        time_bnd += tcdetail.toc();
         //rhs += -lhs*gD_rhs;
 
         lcs.push_back({lhs, rhs});
+        tcdetail.tic();
         auto [lhsc, rhsc] = disk::hho::schur(lhs, rhs, phiT);
+        time_schur += tcdetail.toc();
         assm.assemble(state.msh, cl, lhsc, rhsc);
     }
     assm.finalize();
+    std::cout << "Reco: " << time_reco << ", stab: " << time_stab << ", rhs: " << time_rhs;
+    std::cout << ", bnd: " << time_bnd << ", schur: " << time_schur << "\n";
     std::cout << tc.toc() << " seconds\n";
 
     std::cout << "Solve: " << std::endl;
@@ -435,7 +486,8 @@ solver_std(solver_state<Mesh>& state)
 
     vec sol;
     tc.tic();
-    disk::solvers::sparse_lu(assm.LHS, assm.RHS, sol);
+    disk::solvers::sparse_lu(assm.LHS, assm.RHS, sol,
+        disk::solvers::direct_solver::mumps);
     //sol = vec::Zero(assm.LHS.rows());
     //disk::solvers::iterative_solver_params parms;
     //parms.max_iter = 2*assm.LHS.rows();
@@ -443,10 +495,10 @@ solver_std(solver_state<Mesh>& state)
     //disk::solvers::cg(parms, assm.LHS, assm.RHS, sol);
     std::cout << " " << tc.toc() << " seconds\n";
 
-    auto [evmax, emax] = disk::solvers::powiter(assm.LHS).value();
-    auto [evmin, emin] = disk::solvers::inv_powiter(assm.LHS, 0.0).value();
-    std::cout << "Max eigval: " << emax << ", min eigval: ";
-    std::cout << emin << ", cond: " << emax/emin << "\n";
+    //auto [evmax, emax] = disk::solvers::powiter(assm.LHS).value();
+    //auto [evmin, emin] = disk::solvers::inv_powiter(assm.LHS, 0.0).value();
+    //std::cout << "Max eigval: " << emax << ", min eigval: ";
+    //std::cout << emin << ", cond: " << emax/emin << "\n";
 
     std::cout << "Postpro: " << std::flush;
     tc.tic();
@@ -493,10 +545,12 @@ void init_problem(solver_state<Mesh>& state)
         }
     );
 
-    state.degree = 2;
     state.bcs.resize( state.msh.faces_size(), bc::none );
 
     size_t bndfcs = 0;
+
+    auto surface = 0.0;
+    auto volume = 0.0;
 
     for (auto& fc : faces(state.msh)) {
         auto bi = state.msh.boundary_info(fc);
@@ -505,12 +559,20 @@ void init_problem(solver_state<Mesh>& state)
             state.bcs[ gofs ] = bc::robin;
             
             bndfcs++;
+            surface += measure(state.msh, fc);
         }
+    }
+
+    for (auto& cl : state.msh) {
+        volume += measure(state.msh, cl);
     }
 
     std::cout << "bnd: " << bndfcs << ", tot: " << state.msh.faces_size();
     std::cout << ", ratio: " << (100.0*bndfcs)/state.msh.faces_size();
     std::cout << "%" << std::endl;
+
+    std::cout << "Surface: " << surface << ", volume: " << volume;
+    std::cout << ", ratio (s/v) = " << surface/volume << std::endl;
 
     state.silo.create("hs.silo");
     state.silo.add_mesh(state.msh, "mesh");
@@ -520,13 +582,14 @@ int main(int argc, const char *argv[])
 {
     using T = double;
 
-    if (argc != 2)
+    if (argc != 3)
     {
-        std::cout << argv[0] << " <mesh_file>" << std::endl;
+        std::cout << argv[0] << " <mesh_file> <degree>" << std::endl;
         return 1;
     }
 
     const char *mesh_filename = argv[1];
+    size_t degree = std::stoull(argv[2]);
 
     #if 0
     if (std::regex_match(mesh_filename, std::regex(".*\\.geo2s$") ))
@@ -549,7 +612,14 @@ int main(int argc, const char *argv[])
         loader.read_mesh(mesh_filename);
         loader.populate_mesh(state.msh);
         init_problem(state);
+        state.mixed_order = false;
+        state.degree = degree;
+        std::cout << "### NO-BOUNDARY\n";
         solver_minimal(state);
+        std::cout << "### STD EQUAL ORDER\n";
+        solver_std(state);
+        std::cout << "### STD MIXED ORDER\n";
+        state.mixed_order = true;
         solver_std(state);
         return 0;
     }
@@ -563,6 +633,7 @@ int main(int argc, const char *argv[])
         loader.read_mesh(mesh_filename);
         loader.populate_mesh(state.msh);
         init_problem(state);
+        state.degree = degree;
         solver_minimal(state);
         solver_std(state);
         return 0;
