@@ -1238,7 +1238,8 @@ mesh_aspect(const MeshType& msh, const std::string& filename)
 
 template<typename Mesh>
 void
-shake(Mesh& msh, typename Mesh::coordinate_type delta)
+shake(Mesh& msh, typename Mesh::coordinate_type delta,
+    std::optional<unsigned int> seed = std::nullopt)
 {
     using T = typename Mesh::coordinate_type;
     using point_type = typename Mesh::point_type;
@@ -1256,7 +1257,11 @@ shake(Mesh& msh, typename Mesh::coordinate_type delta)
 
 
     std::random_device rd;
-    std::mt19937 gen(rd());
+    unsigned int seed_val = rd();
+    if (seed) {
+        seed_val = seed.value();
+    }
+    std::mt19937 gen(seed_val);
     std::uniform_real_distribution<T> dist(-delta, delta);
 
     for (size_t i = 0; i < msh.points_size(); i++) {
