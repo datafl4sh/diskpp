@@ -135,3 +135,8 @@ option(BUILD_APP_RUN_PARDISO "Build run_pardiso application" ON)
 if (BUILD_APP_RUN_PARDISO)
     add_subdirectory(run_pardiso)
 endif()
+
+option(BUILD_APP_BM "Build Borio-Marcon FEM application" ON)
+if (BUILD_APP_BM)
+    add_subdirectory(bm)
+endif()
