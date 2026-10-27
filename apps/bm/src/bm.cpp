@@ -435,8 +435,9 @@ int main(int argc, char **argv)
     silo.add_mesh(msh, "mesh");
 
     disk::hho::slapl::degree_info di(0);
-    auto assm = disk::hho::slapl::make_assembler(msh, di);
-    auto assmM = disk::hho::slapl::make_assembler(msh, di);
+    std::vector<bool> dirfaces( msh.faces_size(), false );
+    auto assm = disk::hho::slapl::make_assembler(msh, di, dirfaces);
+    auto assmM = disk::hho::slapl::make_assembler(msh, di, dirfaces);
 
     Eigen::Matrix<T, Eigen::Dynamic, 2> vecs;
     vecs.resize(msh.cells_size(), 2);
@@ -475,8 +476,30 @@ int main(int argc, char **argv)
         for (auto& qp : qps) {
             auto [B1, gB1] = eval_bases(msh, cl, cdata, qp.point());
             lhs += qp.weight() * gB1.transpose() * gB1;
-            M += qp.weight() * B1 * B1.transpose();
+            //M += qp.weight() * B1 * B1.transpose();
             rhs += qp.weight() * f(qp.point()) * B1;
+        }
+
+        for (auto& fc : fcs) {
+            auto bi = msh.boundary_info(fc);
+            if ( not bi.is_boundary() ) {
+                continue;
+            }
+
+            auto fqps = integrate(msh, fc, 2*Ne);
+            if (bi.tag() == 0) {
+                /* robin */
+                for (auto& qp : fqps) {
+                    auto [B1, gB1] = eval_bases(msh, cl, cdata, qp.point());
+                    lhs += qp.weight() * B1 * B1.transpose();
+                }
+            } else {
+                /* steklov */
+                for (auto& qp : fqps) {
+                    auto [B1, gB1] = eval_bases(msh, cl, cdata, qp.point());
+                    M += qp.weight() * B1 * B1.transpose();
+                }
+            }
         }
 
         assm.assemble(msh, cl, lhs, rhs);
@@ -529,9 +552,9 @@ int main(int argc, char **argv)
 
     disk::solvers::feast_eigensolver_params<T> fep;
     fep.verbose = 1;
-    fep.min_eigval = 1;
-    fep.max_eigval = 120;
-    fep.subspace_size = 10;
+    fep.min_eigval = 0;
+    fep.max_eigval = 5;
+    fep.subspace_size = 20;
     fep.tolerance = 8;
     fep.max_iter = 10;
     fep.fis = disk::solvers::feast_inner_solver::mumps;
@@ -543,6 +566,7 @@ int main(int argc, char **argv)
 
     std::cout << eigvals.transpose() << std::endl;
 
+    /*
     disk::dynamic_vector<T> eigvals_ref = disk::dynamic_vector<T>::Zero(eigvals.size());
 
     int k = 0;
@@ -563,6 +587,8 @@ int main(int argc, char **argv)
     
     std::cout << std::setprecision(15);
     std::cout << (eigvals - eigvals_ref).transpose() << std::endl;
+
+    */
 
     std::vector<T> u_data;
     std::vector<T> pivots;
